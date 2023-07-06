@@ -8,6 +8,7 @@ use uuid::Uuid;
 use thiserror::Error;
 
 use pass_builder::PassBuilder;
+use pipeline_builder::{ PipelineLayoutBuilder, BindGroupLayoutBuilder };
 
 struct Resource {}
 struct Pass {}
@@ -25,20 +26,90 @@ pub enum RenderGraphResult {
     PassDoesNotExist
 }
 
+trait HandleType {
+    fn new() -> Self;
+    fn uuid(&self) -> Uuid;
+}
+
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
 pub struct ResourceHandle(Uuid);
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
 pub struct PassHandle(Uuid);
+#[derive(Copy, Clone, Hash, PartialEq, Eq)]
+pub struct PipelineLayoutHandle(Uuid);
+#[derive(Copy, Clone, Hash, PartialEq, Eq)]
+pub struct BindGroupLayoutHandle(Uuid);
 
-pub struct RenderGraph {
+impl HandleType for PipelineLayoutHandle {
+    fn new() -> Self {
+        PipelineLayoutHandle(Uuid::new_v4())
+    }
+
+    fn uuid(&self) -> Uuid {
+        self.0
+    }
+}
+
+impl HandleType for BindGroupLayoutHandle {
+    fn new() -> Self {
+        BindGroupLayoutHandle(Uuid::new_v4())
+    }
+
+    fn uuid(&self) -> Uuid {
+        self.0
+    }
+}
+
+struct LayoutMap<T, HandleT> 
+    where HandleT: HandleType + Copy + std::hash::Hash + PartialEq + Eq  {
+    string_map: HashMap<String, HandleT>,
+    handle_map: HashMap<HandleT, T>
+}
+
+impl<T, HandleT> LayoutMap<T, HandleT> where 
+    HandleT: HandleType + Copy + std::hash::Hash + PartialEq + Eq {
+    pub fn new() -> Self {
+        LayoutMap {
+            string_map: HashMap::new(),
+            handle_map: HashMap::new()
+        }
+    }
+
+    pub fn add(&mut self, object: T, string_id: Option<String>) -> HandleT {
+        let handle = HandleT::new();
+        self.handle_map.insert(handle, object);
+        if let Some(id) = string_id {
+            self.string_map.insert(id, handle);
+        }
+        handle
+    }
+
+    pub fn get_from_string(&self, string_id: &String) -> Option<&T> {
+        if !self.string_map.contains_key(string_id) {
+            return None
+        }
+        let handle = self.string_map.get(string_id).unwrap();
+        self.get_from_handle(&handle)
+    }
+
+    pub fn get_from_handle(&self, handle: &HandleT) -> Option<&T> {
+        self.handle_map.get(handle)
+    }
+}
+
+pub struct RenderGraph<'graph> {
+    pipeline_layouts: LayoutMap<PipelineLayoutBuilder<'graph>, PipelineLayoutHandle>,
+    bind_group_layouts: LayoutMap<BindGroupLayoutBuilder<'graph>, BindGroupLayoutHandle>,
     graph: Graph<Vertex, ()>,
     pass_map: HashMap<PassHandle, NodeIndex>,
     resource_map: HashMap<ResourceHandle, NodeIndex>
 }
 
-impl RenderGraph {
-    pub fn new() -> RenderGraph {
+impl RenderGraph<'_> {
+    pub fn new<'a>() -> RenderGraph<'a> {
         RenderGraph {
+            pipeline_layouts: LayoutMap::new(),
+            bind_group_layouts: LayoutMap::new(),
             graph: Graph::new(),
             pass_map: HashMap::new(),
             resource_map: HashMap::new()
