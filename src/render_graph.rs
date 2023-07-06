@@ -60,16 +60,16 @@ impl HandleType for BindGroupLayoutHandle {
     }
 }
 
-struct LayoutMap<T, HandleT> 
+struct HandleMap<T, HandleT> 
     where HandleT: HandleType + Copy + std::hash::Hash + PartialEq + Eq  {
     string_map: HashMap<String, HandleT>,
     handle_map: HashMap<HandleT, T>
 }
 
-impl<T, HandleT> LayoutMap<T, HandleT> where 
+impl<T, HandleT> HandleMap<T, HandleT> where 
     HandleT: HandleType + Copy + std::hash::Hash + PartialEq + Eq {
     pub fn new() -> Self {
-        LayoutMap {
+        HandleMap {
             string_map: HashMap::new(),
             handle_map: HashMap::new()
         }
@@ -98,22 +98,30 @@ impl<T, HandleT> LayoutMap<T, HandleT> where
 }
 
 pub struct RenderGraph<'graph> {
-    pipeline_layouts: LayoutMap<PipelineLayoutBuilder<'graph>, PipelineLayoutHandle>,
-    bind_group_layouts: LayoutMap<BindGroupLayoutBuilder<'graph>, BindGroupLayoutHandle>,
+    pipeline_layouts: HandleMap<PipelineLayoutBuilder<'graph>, PipelineLayoutHandle>,
+    bind_group_layouts: HandleMap<BindGroupLayoutBuilder<'graph>, BindGroupLayoutHandle>,
     graph: Graph<Vertex, ()>,
-    pass_map: HashMap<PassHandle, NodeIndex>,
-    resource_map: HashMap<ResourceHandle, NodeIndex>
+    active_pass_map: HashMap<PassHandle, NodeIndex>,
+    active_resource_map: HashMap<ResourceHandle, NodeIndex>
 }
 
-impl RenderGraph<'_> {
-    pub fn new<'a>() -> RenderGraph<'a> {
+impl<'graph> RenderGraph<'graph> {
+    pub fn new() -> RenderGraph<'graph> {
         RenderGraph {
-            pipeline_layouts: LayoutMap::new(),
-            bind_group_layouts: LayoutMap::new(),
+            pipeline_layouts: HandleMap::new(),
+            bind_group_layouts: HandleMap::new(),
             graph: Graph::new(),
-            pass_map: HashMap::new(),
-            resource_map: HashMap::new()
+            active_pass_map: HashMap::new(),
+            active_resource_map: HashMap::new()
         }
+    }
+
+    pub fn add_pipeline_layout(&mut self, layout: PipelineLayoutBuilder<'graph>, id: Option<String>) -> PipelineLayoutHandle {
+        self.pipeline_layouts.add(layout, id)
+    }
+
+    pub fn add_bind_group_layout(&mut self, layout: BindGroupLayoutHandle<'graph>, id: Option<String>) -> BindGroupLayoutHandle {
+        self.bind_group_layouts.add(layout, id)
     }
 
     pub fn add_pass(&mut self, pass: PassBuilder) -> (PassHandle, Vec<ResourceHandle>) {
@@ -125,34 +133,34 @@ impl RenderGraph<'_> {
     }
 
     pub fn link_resource_to_pass(&mut self, pass: &PassHandle, resources: &[ResourceHandle]) -> Result<(), RenderGraphResult> {
-        if !self.pass_map.contains_key(pass) {
+        if !self.active_pass_map.contains_key(pass) {
             return Err(RenderGraphResult::PassDoesNotExist)
         }
 
-        let pass_vertex = self.pass_map.get(pass).unwrap();
+        let pass_vertex = self.active_pass_map.get(pass).unwrap();
         for resource in resources.iter() {
-            if !self.resource_map.contains_key(resource) {
+            if !self.active_resource_map.contains_key(resource) {
                 return Err(RenderGraphResult::ResourceDoesNotExist)
             }
 
-            self.graph.add_edge(*self.resource_map.get(resource).unwrap(), *pass_vertex, ());
+            self.graph.add_edge(*self.active_resource_map.get(resource).unwrap(), *pass_vertex, ());
         }
 
         Ok(())
     }
 
     pub fn link_pass_to_resource(&mut self, resource: &ResourceHandle, passes: &[PassHandle]) -> Result<(), RenderGraphResult> {
-        if !self.resource_map.contains_key(resource) {
+        if !self.active_resource_map.contains_key(resource) {
             return Err(RenderGraphResult::ResourceDoesNotExist)
         }
 
-        let resource_vertex = self.resource_map.get(resource).unwrap();
+        let resource_vertex = self.active_resource_map.get(resource).unwrap();
         for pass in passes.iter() {
-            if !self.pass_map.contains_key(pass) {
+            if !self.active_pass_map.contains_key(pass) {
                 return Err(RenderGraphResult::PassDoesNotExist)
             }
 
-            self.graph.add_edge(*self.pass_map.get(pass).unwrap(), *resource_vertex, ());
+            self.graph.add_edge(*self.active_pass_map.get(pass).unwrap(), *resource_vertex, ());
         }
 
         Ok(())
