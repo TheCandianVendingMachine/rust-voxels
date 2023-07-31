@@ -82,6 +82,10 @@ impl Grid {
 
         hashes
     }
+
+    pub fn is_orientation_of(&self, other: &Grid) -> bool {
+        other.get_all_orientation_hashes().iter().any(|h| *h == self.hash)
+    }
 }
 
 pub struct SpatialGrid {
