@@ -4,7 +4,9 @@ mod colliders;
 mod grid;
 mod voxel;
 mod ray;
+mod window;
 
 fn main() {
-    println!("Hello, world!");
+    env_logger::init();
+    pollster::block_on(window::Window::new()).run();
 }
