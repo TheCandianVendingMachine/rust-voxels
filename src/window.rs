@@ -4,6 +4,8 @@ use winit::{
     window::{ self, WindowBuilder }
 };
 
+use crate::render_graph::shader_builder::{ ShaderBuilder, WgslBuilder };
+
 struct State {
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -61,10 +63,10 @@ impl State {
         };
         surface.configure(&device, &config);
 
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("triangle.wgsl").into()),
-        });
+        let shader = device.create_shader_module(ShaderBuilder::new()
+            .label("Shader")
+            .shader(&WgslBuilder::from_buffer(include_str!("triangle.wgsl")))
+        .build());
 
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
