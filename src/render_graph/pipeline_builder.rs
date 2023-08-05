@@ -1,3 +1,5 @@
+use crate::render;
+
 #[derive(Debug, Copy, Clone)]
 struct BindGroupData {
     visibility: VisibilityBuilder,
@@ -36,20 +38,15 @@ impl VisibilityBuilder {
     }
 }
 
-pub struct Binding<'binding> {
-    label: Option<&'binding str>,
-    entries: Vec<wgpu::BindGroupLayoutEntry>
-}
-
 #[derive(Debug, Clone)]
-pub struct BindGroupBuilder<'binding> {
+pub struct BindGroupLayoutBuilder<'binding> {
     label: Option<&'binding str>,
     bindings: Vec<BindGroupData>
 }
 
-impl<'binding> BindGroupBuilder<'binding> {
+impl<'binding> BindGroupLayoutBuilder<'binding> {
     pub fn binding() -> Self {
-        BindGroupBuilder {
+        BindGroupLayoutBuilder {
             label: None,
             bindings: Vec::new()
         }
@@ -68,7 +65,7 @@ impl<'binding> BindGroupBuilder<'binding> {
         self
     }
 
-    pub fn build(self) -> Binding<'binding> {
+    pub fn build(self) -> render::BindingGroupLayout<'binding> {
         let entries: Vec<wgpu::BindGroupLayoutEntry> = self.bindings.iter()
             .enumerate()
             .map(|(index, binding)| wgpu::BindGroupLayoutEntry {
@@ -79,15 +76,46 @@ impl<'binding> BindGroupBuilder<'binding> {
             })
         .collect();
 
-        Binding {
+        render::BindingGroupLayout {
             label: self.label,
             entries
         }
     }
 }
 
-pub struct PipelineBuilder {
+pub struct PipelineLayoutBuilder<'layout> {
+    label: Option<&'layout str>,
+    bind_group: BindGroupLayoutBuilder<'layout>
+}
 
+impl<'layout> PipelineLayoutBuilder<'layout> {
+    pub fn label(mut self, label: &'layout str) -> Self {
+        self.label = Some(label);
+        self
+    }
+
+    pub fn bind_group(mut self, bind_group: BindGroupLayoutBuilder<'layout>) -> Self {
+        PipelineLayoutBuilder {
+            bind_group,
+            label: None
+        }
+    }
+
+    pub fn build(self) -> render::PipelineLayout<'layout> {
+        render::PipelineLayout {
+            label: self.label,
+            binding_group: self.bind_group.build()
+        }
+    }
+}
+
+enum PipelineBuilderType {
+    Render(RenderPipelineBuilder)
+}
+
+pub struct PipelineBuilder<'pipeline> {
+    label: Option<&'pipeline str>,
+    sub_builder: PipelineBuilderType
 }
 
 pub struct RenderPipelineBuilder {

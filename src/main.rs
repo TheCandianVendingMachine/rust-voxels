@@ -6,6 +6,7 @@ mod voxel;
 mod ray;
 mod window;
 mod render_graph;
+mod render;
 
 fn main() {
     env_logger::init();
