@@ -4,16 +4,19 @@ pub trait ShaderSource<'shader> {
     fn build(&self) -> wgpu::ShaderSource<'shader>;
 }
 
-pub struct ShaderBuilder<'shader> {
+#[derive(Debug, Clone)]
+pub struct ShaderBuilder<'shader, S> where
+    S: ShaderSource<'shader> + std::fmt::Debug + Clone {
     label: Option<&'shader str>,
-    shader: Option<&'shader dyn ShaderSource<'shader>>
+    shader: &'shader S
 }
 
-impl<'shader> ShaderBuilder<'shader> { 
-    pub fn new() -> ShaderBuilder<'shader> {
+impl<'shader, S> ShaderBuilder<'shader, S> where
+    S: ShaderSource<'shader> + std::fmt::Debug + Clone { 
+    pub fn shader(shader: &'shader S) -> Self {
         ShaderBuilder {
             label: None,
-            shader: None
+            shader
         }
     }
 
@@ -22,20 +25,15 @@ impl<'shader> ShaderBuilder<'shader> {
         self
     }
 
-    pub fn shader(mut self, shader: &'shader impl ShaderSource<'shader>) -> Self {
-        self.shader = Some(shader);
-        self
-    }
-
-    pub fn build(self) -> wgpu::ShaderModuleDescriptor<'shader> {
-        let shader = self.shader.unwrap();
+    pub fn build(&self) -> wgpu::ShaderModuleDescriptor<'shader> {
         wgpu::ShaderModuleDescriptor {
             label: self.label,
-            source: shader.build()
+            source: self.shader.build()
         }
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct WgslBuilder<'shader> {
     source: Cow<'shader, str>
 }

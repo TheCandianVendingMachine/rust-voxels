@@ -63,9 +63,9 @@ impl State {
         };
         surface.configure(&device, &config);
 
-        let shader = device.create_shader_module(ShaderBuilder::new()
+        let shader = device.create_shader_module(
+            ShaderBuilder::shader(&WgslBuilder::from_buffer(include_str!("triangle.wgsl")))
             .label("Shader")
-            .shader(&WgslBuilder::from_buffer(include_str!("triangle.wgsl")))
         .build());
 
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
