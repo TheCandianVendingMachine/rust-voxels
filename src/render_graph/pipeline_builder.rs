@@ -36,6 +36,11 @@ impl VisibilityBuilder {
     }
 }
 
+pub struct Binding<'binding> {
+    label: Option<&'binding str>,
+    entries: Vec<wgpu::BindGroupLayoutEntry>
+}
+
 #[derive(Debug, Clone)]
 pub struct BindGroupBuilder<'binding> {
     label: Option<&'binding str>,
@@ -63,7 +68,7 @@ impl<'binding> BindGroupBuilder<'binding> {
         self
     }
 
-    pub fn build(self) -> wgpu::BindGroupLayoutDescriptor<'binding> {
+    pub fn build(self) -> Binding<'binding> {
         let entries: Vec<wgpu::BindGroupLayoutEntry> = self.bindings.iter()
             .enumerate()
             .map(|(index, binding)| wgpu::BindGroupLayoutEntry {
@@ -74,9 +79,9 @@ impl<'binding> BindGroupBuilder<'binding> {
             })
         .collect();
 
-        wgpu::BindGroupLayoutDescriptor {
+        Binding {
             label: self.label,
-            entries: &[]
+            entries
         }
     }
 }
