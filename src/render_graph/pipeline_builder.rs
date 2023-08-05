@@ -83,6 +83,7 @@ impl<'binding> BindGroupLayoutBuilder<'binding> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct PipelineLayoutBuilder<'layout> {
     label: Option<&'layout str>,
     bind_group: BindGroupLayoutBuilder<'layout>
