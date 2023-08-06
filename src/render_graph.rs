@@ -7,15 +7,17 @@ use petgraph::graph::{ NodeIndex, Graph };
 use uuid::Uuid;
 use thiserror::Error;
 
-use pass_builder::PassBuilder;
+use pass_builder::RenderPassBuilder;
 use pipeline_builder::{ PipelineLayoutBuilder, BindGroupLayoutBuilder };
 
 struct Resource {}
-struct Pass {}
+enum Pass<'pass> {
+    Render(RenderPassBuilder<'pass>)
+}
 
-enum Vertex {
+enum Vertex<'vertex> {
     Red(Resource),
-    Blue(Pass)
+    Blue(Pass<'vertex>)
 }
 
 #[derive(Debug, Error)]
@@ -39,6 +41,26 @@ pub struct PassHandle(Uuid);
 pub struct PipelineLayoutHandle(Uuid);
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
 pub struct BindGroupLayoutHandle(Uuid);
+
+impl HandleType for ResourceHandle {
+    fn new() -> Self {
+        ResourceHandle(Uuid::new_v4())
+    }
+
+    fn uuid(&self) -> Uuid {
+        self.0
+    }
+}
+
+impl HandleType for PassHandle {
+    fn new() -> Self {
+        PassHandle(Uuid::new_v4())
+    }
+
+    fn uuid(&self) -> Uuid {
+        self.0
+    }
+}
 
 impl HandleType for PipelineLayoutHandle {
     fn new() -> Self {
@@ -100,7 +122,7 @@ impl<T, HandleT> HandleMap<T, HandleT> where
 pub struct RenderGraph<'graph> {
     pipeline_layouts: HandleMap<PipelineLayoutBuilder<'graph>, PipelineLayoutHandle>,
     bind_group_layouts: HandleMap<BindGroupLayoutBuilder<'graph>, BindGroupLayoutHandle>,
-    graph: Graph<Vertex, ()>,
+    graph: Graph<Vertex<'graph>, ()>,
     active_pass_map: HashMap<PassHandle, NodeIndex>,
     active_resource_map: HashMap<ResourceHandle, NodeIndex>
 }
@@ -120,16 +142,33 @@ impl<'graph> RenderGraph<'graph> {
         self.pipeline_layouts.add(layout, id)
     }
 
-    pub fn add_bind_group_layout(&mut self, layout: BindGroupLayoutHandle<'graph>, id: Option<String>) -> BindGroupLayoutHandle {
+    pub fn add_bind_group_layout(&mut self, layout: BindGroupLayoutBuilder<'graph>, id: Option<String>) -> BindGroupLayoutHandle {
         self.bind_group_layouts.add(layout, id)
     }
 
-    pub fn add_pass(&mut self, pass: PassBuilder) -> (PassHandle, Vec<ResourceHandle>) {
-        (PassHandle(Uuid::new_v4()), Vec::new())
+    pub fn add_render_pass(&mut self, pass: RenderPassBuilder<'graph>) -> (PassHandle, Vec<ResourceHandle>) {
+        let new_resources: Vec<pass_builder::RenderPassAttachment> = pass.colour_attachments.iter()
+            .filter(|a| a.attachment.is_new_resource())
+            .map(|a| *a)
+            .collect();
+
+        let mut resource_handles: Vec<ResourceHandle> = pass.colour_attachments.iter()
+            .filter(|a| a.attachment.resource_handle().is_some())
+            .map(|a| a.attachment.resource_handle().unwrap())
+            .collect();
+
+        for resource in new_resources {
+            resource_handles.push(self.add_resource());
+        }
+
+        let handle = PassHandle::new();
+        let node_index = self.graph.add_node(Vertex::Blue(Pass::Render(pass)));
+        self.active_pass_map.insert(handle, node_index);
+        (handle, resource_handles)
     }
 
     pub fn add_resource(&mut self) -> ResourceHandle {
-        ResourceHandle(Uuid::new_v4())
+        ResourceHandle::new()
     }
 
     pub fn link_resource_to_pass(&mut self, pass: &PassHandle, resources: &[ResourceHandle]) -> Result<(), RenderGraphResult> {
