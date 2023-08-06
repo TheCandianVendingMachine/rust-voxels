@@ -1,4 +1,5 @@
 use crate::render;
+pub use crate::render_graph::handle_map::Handle as PipelineHandle;
 
 #[derive(Debug, Copy, Clone)]
 struct BindGroupData {

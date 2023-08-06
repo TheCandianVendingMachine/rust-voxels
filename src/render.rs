@@ -32,3 +32,8 @@ impl PipelineLayout<'_> {
         })
     }
 }
+
+#[derive(Copy, Clone)]
+pub enum Attachment {
+
+}

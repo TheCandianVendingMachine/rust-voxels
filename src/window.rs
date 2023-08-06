@@ -6,6 +6,24 @@ use winit::{
 
 use crate::render_graph::shader_builder::{ ShaderBuilder, WgslBuilder };
 use crate::render_graph::pipeline_builder::{ BindGroupLayoutBuilder, VisibilityBuilder, PipelineLayoutBuilder };
+use crate::render_graph::pass_builder::{ self, RenderPassBuilder, PassAttachment };
+
+use crate::render_graph::{ self, RenderGraph };
+
+fn create_render_graph<'a>() -> RenderGraph<'a> {
+    let mut render_graph = RenderGraph::new();
+    let render_pipeline = render_graph.add_pipeline(
+        PipelineLayoutBuilder::layout().label("Render Pipeline Layout"),
+        Some("render_pipeline")
+    );
+
+    let main_pass = render_graph.add_render_pass(
+        RenderPassBuilder::render_pass(render_pipeline)
+            .add_colour_attachment(PassAttachment::Output(None))
+    );
+
+    render_graph
+}
 
 struct State {
     surface: wgpu::Surface,
