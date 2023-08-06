@@ -7,6 +7,7 @@ mod ray;
 mod window;
 mod render_graph;
 mod render;
+mod sparse_set;
 
 fn main() {
     env_logger::init();

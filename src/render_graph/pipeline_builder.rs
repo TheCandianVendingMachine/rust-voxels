@@ -86,26 +86,32 @@ impl<'binding> BindGroupLayoutBuilder<'binding> {
 #[derive(Debug, Clone)]
 pub struct PipelineLayoutBuilder<'layout> {
     label: Option<&'layout str>,
-    bind_group: BindGroupLayoutBuilder<'layout>
+    bind_group: Option<BindGroupLayoutBuilder<'layout>>
 }
 
 impl<'layout> PipelineLayoutBuilder<'layout> {
+    pub fn layout() -> Self {
+        PipelineLayoutBuilder {
+            label: None,
+            bind_group: None
+        }
+    }
+
     pub fn label(mut self, label: &'layout str) -> Self {
         self.label = Some(label);
         self
     }
 
     pub fn bind_group(mut self, bind_group: BindGroupLayoutBuilder<'layout>) -> Self {
-        PipelineLayoutBuilder {
-            bind_group,
-            label: None
-        }
+        self.bind_group = Some(bind_group);
+        self
     }
 
     pub fn build(self) -> render::PipelineLayout<'layout> {
         render::PipelineLayout {
             label: self.label,
-            binding_group: self.bind_group.build()
+            binding_group: self.bind_group.map(|builder| builder.build()),
+            bind_group_layouts_cache: Vec::new()
         }
     }
 }

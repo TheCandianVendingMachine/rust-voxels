@@ -14,15 +14,21 @@ impl BindingGroupLayout<'_> {
 
 pub struct PipelineLayout<'layout> {
     pub label: Option<&'layout str>,
-    pub binding_group: BindingGroupLayout<'layout>
+    pub binding_group: Option<BindingGroupLayout<'layout>>,
+    pub bind_group_layouts_cache: Vec<wgpu::BindGroupLayout>,
 }
 
 impl PipelineLayout<'_> {
-    pub fn create(&self, device: &wgpu::Device) -> wgpu::PipelineLayout {
+    pub fn create(&mut self, device: &wgpu::Device) -> wgpu::PipelineLayout {
+        if let Some(binding_group) = &self.binding_group {
+            self.bind_group_layouts_cache.push(binding_group.create(device))
+        }
+
+        let bind_group_refs: Vec<&wgpu::BindGroupLayout> = self.bind_group_layouts_cache.iter().map(|l| l).collect();
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: self.label,
             push_constant_ranges: &[],
-            bind_group_layouts: &[&self.binding_group.create(device)]
+            bind_group_layouts: bind_group_refs.as_slice()
         })
     }
 }

@@ -5,6 +5,7 @@ use winit::{
 };
 
 use crate::render_graph::shader_builder::{ ShaderBuilder, WgslBuilder };
+use crate::render_graph::pipeline_builder::{ BindGroupLayoutBuilder, VisibilityBuilder, PipelineLayoutBuilder };
 
 struct State {
     surface: wgpu::Surface,
@@ -68,11 +69,8 @@ impl State {
             .label("Shader")
         .build());
 
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[],
-            push_constant_ranges: &[]
-        });
+        let mut render_pipeline_layout = PipelineLayoutBuilder::layout().label("Render Pipeline Layout").build();
+        let render_pipeline_layout = render_pipeline_layout.create(&device);
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
