@@ -4,11 +4,13 @@ use winit::{
     window::{ self, WindowBuilder }
 };
 
+use crate::render_graph::attachment::{ Attachment, Id as AttachmentId };
 use crate::render_graph::shader_builder::{ ShaderBuilder, WgslBuilder };
-use crate::render_graph::pipeline_builder::{ BindGroupLayoutBuilder, VisibilityBuilder, PipelineLayoutBuilder };
-use crate::render_graph::pass_builder::{ self, RenderPassBuilder, PassAttachment };
-
-use crate::render_graph::{ self, RenderGraph };
+use crate::render_graph::pipeline_builder::{ PipelineLayoutBuilder };
+use crate::render_graph::pass_builder::{ RenderPassBuilder, PassAttachment };
+use crate::render_graph::RenderGraph;
+use petgraph::dot::Dot;
+use uuid::Uuid;
 
 fn create_render_graph<'a>() -> RenderGraph<'a> {
     let mut render_graph = RenderGraph::new();
@@ -17,10 +19,32 @@ fn create_render_graph<'a>() -> RenderGraph<'a> {
         Some("render_pipeline")
     );
 
-    let main_pass = render_graph.add_render_pass(
+    let surface = render_graph.add_resource(Attachment::Persistent(AttachmentId::new_with_name("Surface")));
+    let texture_input = render_graph.add_resource(Attachment::Persistent(AttachmentId::new_with_name("Texture")));
+    let pp_input = render_graph.add_resource(Attachment::Persistent(AttachmentId::new_with_name("pp input")));
+    let (main_pass, main_pass_outputs) = render_graph.add_render_pass(
         RenderPassBuilder::render_pass(render_pipeline)
-            .add_colour_attachment(PassAttachment::Output(None))
+            .label("Test Pass")
+            .add_colour_attachment(PassAttachment::OnlyInput(texture_input.handle))
+            .add_colour_attachment(PassAttachment::InputAndOutput(surface.handle))
     );
+    let (cloud_pass, cloud_pass_outputs) = render_graph.add_render_pass(
+        RenderPassBuilder::render_pass(render_pipeline)
+            .label("Clouds")
+            .add_colour_attachment(PassAttachment::OnlyInput(texture_input.handle))
+            .add_colour_attachment(PassAttachment::OnlyOutput(None))
+    );
+    let (pp_pass, pp_pass_outputs) = render_graph.add_render_pass(
+        RenderPassBuilder::render_pass(render_pipeline)
+            .label("Post Processing")
+            .add_colour_attachment(PassAttachment::OnlyInput(cloud_pass_outputs[0].handle))
+            .add_colour_attachment(PassAttachment::OnlyInput(pp_input.handle))
+            .add_colour_attachment(PassAttachment::InputAndOutput(main_pass_outputs[0].handle))
+    );
+
+    let out_graph = render_graph.string_graph();
+    let dot = Dot::new(&out_graph);
+    std::fs::write("test.graph", format!("{:?}", dot)).unwrap();
 
     render_graph
 }
@@ -81,6 +105,8 @@ impl State {
             view_formats: vec![]
         };
         surface.configure(&device, &config);
+
+        let _render_graph = create_render_graph();
 
         let shader = device.create_shader_module(
             ShaderBuilder::shader(&WgslBuilder::from_buffer(include_str!("triangle.wgsl")))

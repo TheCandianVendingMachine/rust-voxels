@@ -4,23 +4,31 @@ pub use crate::render_graph::handle_map::Handle as PassHandle;
 
 #[derive(Debug, Clone, Copy)]
 pub enum PassAttachment {
-    Input(AttachmentHandle),
-    Output(Option<AttachmentHandle>),
-    InputOutput(AttachmentHandle)
+    OnlyInput(AttachmentHandle),
+    OnlyOutput(Option<AttachmentHandle>),
+    InputAndOutput(AttachmentHandle)
 }
 
 impl PassAttachment {
     pub fn is_output(&self) -> bool {
-        if let PassAttachment::Output(_) = *self {
-            true
-        } else{
-            false
+        match self {
+            PassAttachment::OnlyOutput(_) => true,
+            PassAttachment::InputAndOutput(_) => true,
+            PassAttachment::OnlyInput(_) => false
+        }
+    }
+
+    pub fn is_input(&self) -> bool {
+        match self {
+            PassAttachment::OnlyOutput(_) => false,
+            PassAttachment::InputAndOutput(_) => true,
+            PassAttachment::OnlyInput(_) => true
         }
     }
 
     pub fn is_new_resource(&self) -> bool {
-        if let PassAttachment::Output(resource) = *self {
-            resource.is_some()
+        if let PassAttachment::OnlyOutput(resource) = *self {
+            resource.is_none()
         } else {
             false
         }
@@ -28,15 +36,16 @@ impl PassAttachment {
 
     pub fn resource_handle(&self) -> Option<AttachmentHandle> {
         match *self {
-            PassAttachment::Output(resource) => resource,
-            PassAttachment::Input(resource) => Some(resource),
-            PassAttachment::InputOutput(resource) => Some(resource)
+            PassAttachment::OnlyOutput(resource) => resource,
+            PassAttachment::OnlyInput(resource) => Some(resource),
+            PassAttachment::InputAndOutput(resource) => Some(resource)
         }
     }
 }
 
+#[derive(Clone)]
 pub struct RenderPassBuilder<'pass> {
-    label: Option<&'pass str>,
+    pub label: Option<&'pass str>,
     pub colour_attachments: Vec<PassAttachment>,
     pub depth_stencil: Option<AttachmentHandle>,
     pub pipeline: PipelineHandle

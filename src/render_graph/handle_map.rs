@@ -22,7 +22,8 @@ impl HandleType for Handle where {
 pub struct HandleMap<HandleT, T> 
     where HandleT: HandleType + Copy + std::hash::Hash + PartialEq + Eq  {
     string_map: HashMap<String, HandleT>,
-    handle_map: HashMap<HandleT, T>
+    handle_map: HashMap<HandleT, T>,
+    handle_to_string_map: HashMap<HandleT, String>
 }
 
 impl<T, HandleT> HandleMap<HandleT, T> where 
@@ -30,7 +31,8 @@ impl<T, HandleT> HandleMap<HandleT, T> where
     pub fn new() -> Self {
         HandleMap {
             string_map: HashMap::new(),
-            handle_map: HashMap::new()
+            handle_map: HashMap::new(),
+            handle_to_string_map: HashMap::new()
         }
     }
 
@@ -38,20 +40,21 @@ impl<T, HandleT> HandleMap<HandleT, T> where
         let handle = HandleT::new();
         self.handle_map.insert(handle, object);
         if let Some(id) = string_id {
-            self.string_map.insert(id, handle);
+            self.string_map.insert(id.clone(), handle);
+            self.handle_to_string_map.insert(handle, id);
         }
         handle
     }
 
     pub fn get_from_string(&self, string_id: &String) -> Option<&T> {
-        if !self.string_map.contains_key(string_id) {
-            return None
-        }
-        let handle = self.string_map.get(string_id).unwrap();
-        self.get_from_handle(&handle)
+        self.string_map.get(string_id).map_or(None, |h| self.get_from_handle(h))
     }
 
     pub fn get_from_handle(&self, handle: &HandleT) -> Option<&T> {
         self.handle_map.get(handle)
+    }
+
+    pub fn get_string_from_handle(&self, handle: &HandleT) -> Option<String> {
+        self.handle_to_string_map.get(handle).map(|s| s.clone())
     }
 }
