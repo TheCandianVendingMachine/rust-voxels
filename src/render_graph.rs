@@ -1,4 +1,4 @@
-pub mod attachment;
+pub mod resource;
 pub mod shader_builder;
 pub mod pass_builder;
 pub mod pipeline_builder;
@@ -11,11 +11,11 @@ use std::collections::HashMap;
 
 use pass_builder::{ PassHandle, RenderPassBuilder };
 use pipeline_builder::{ PipelineHandle, PipelineLayoutBuilder };
-use attachment::{ AttachmentHandle, Attachment };
+use resource::{ ResourceHandle, Resource };
 use handle_map::{ HandleType, HandleMap, Handle };
 
 enum Vertex {
-    Red(AttachmentHandle),
+    Red(ResourceHandle),
     Blue(PassHandle)
 }
 
@@ -45,7 +45,7 @@ pub enum RenderGraphResult {
 pub struct RenderGraph<'graph> {
     pipelines: HandleMap<PipelineHandle, PipelineLayoutBuilder<'graph>>,
     passes: HandleMap<PassHandle, RenderPassBuilder<'graph>>,
-    attachments: HandleMap<AttachmentHandle, Attachment<'graph>>,
+    resources: HandleMap<ResourceHandle, Resource<'graph>>,
     graph: Graph<Vertex, ()>,
     vertex_handle_map: HashMap<Handle, VertexHandle>,
 }
@@ -55,7 +55,7 @@ impl<'graph> RenderGraph<'graph> {
         RenderGraph {
             pipelines: HandleMap::new(),
             passes: HandleMap::new(),
-            attachments: HandleMap::new(),
+            resources: HandleMap::new(),
             graph: Graph::new(),
             vertex_handle_map: HashMap::new(),
         }
@@ -69,30 +69,30 @@ impl<'graph> RenderGraph<'graph> {
         let pass_handle = self.passes.add(pass.clone(), pass.label.map(|l| l.to_string()));
         let pass_node = self.graph.add_node(Vertex::Blue(pass_handle));
 
-        // Get all output attachments from this pass builder
-        // First, create any new attachments we need
-        let new_outputs: Vec<Attachment> = pass.colour_attachments.iter()
+        // Get all output resources from this pass builder
+        // First, create any new resources we need
+        let new_outputs: Vec<Resource> = pass.colour_attachments.iter()
             .filter(|a| a.is_output())
             .filter(|a| a.is_new_resource())
-            .map(|_| Attachment::Dynamic(Uuid::new_v4()))
-            .inspect(|attachment| { self.attachments.add(*attachment, None); })
+            .map(|_| Resource::Dynamic(Uuid::new_v4()))
+            .inspect(|resource| { self.resources.add(*resource, None); })
             .collect();
 
-        // Get existing nodes from these attachments
-        let existing_outputs: Vec<Attachment> = pass.colour_attachments.iter()
+        // Get existing nodes from these resources
+        let existing_outputs: Vec<Resource> = pass.colour_attachments.iter()
             .filter(|handle| handle.is_output())
             .filter_map(|handle| handle.resource_handle())
-            .filter_map(|attachment_handle| self.attachments.get_from_handle(&attachment_handle))
-            .map(|attachment| *attachment)
+            .filter_map(|resource_handle| self.resources.get_from_handle(&resource_handle))
+            .map(|resource| *resource)
             .collect();
 
         // Attach this render pass to the outputs
         let mut outputs: Vec<VertexHandle> = existing_outputs.iter()
-            .map(|attachment| self.add_resource(*attachment))
+            .map(|resource| self.add_resource(*resource))
             .collect();
         outputs.append(
             &mut new_outputs.iter()
-                .map(|attachment| self.add_resource(*attachment))
+                .map(|resource| self.add_resource(*resource))
                 .collect()
         );
 
@@ -103,11 +103,11 @@ impl<'graph> RenderGraph<'graph> {
         // Attach inputs to this render pass
         pass.colour_attachments.iter()
             .filter_map(|handle| handle.resource_handle())
-            .filter_map(|attachment_handle| self.vertex_handle_map.get(&attachment_handle))
+            .filter_map(|resource_handle| self.vertex_handle_map.get(&resource_handle))
             .for_each(|vertex_handle| { self.graph.add_edge(vertex_handle.node_index, pass_node, ()); });
 
         new_outputs.iter()
-            .map(|attachment_handle| self.add_resource(attachment_handle.into_persistent()))
+            .map(|resource_handle| self.add_resource(resource_handle.into_persistent()))
             .collect::<Vec<VertexHandle>>()
             .iter()
             .for_each(|vertex_handle| { self.graph.add_edge(vertex_handle.node_index, pass_node, ()); });
@@ -117,10 +117,10 @@ impl<'graph> RenderGraph<'graph> {
         (pass_vertex_handle, outputs)
     }
 
-    pub fn add_resource(&mut self, attachment: Attachment<'graph>) -> VertexHandle {
-        let resource_handle = match attachment {
-            Attachment::Persistent(id) => self.attachments.add(attachment, id.string_id.map(|s| s.to_string())),
-            Attachment::Dynamic(_) => self.attachments.add(attachment, None)
+    pub fn add_resource(&mut self, resource: Resource<'graph>) -> VertexHandle {
+        let resource_handle = match resource {
+            Resource::Persistent(id) => self.resources.add(resource, id.string_id.map(|s| s.to_string())),
+            Resource::Dynamic(_) => self.resources.add(resource, None)
         };
 
         let resource_node = self.graph.add_node(Vertex::Red(resource_handle));
@@ -131,17 +131,17 @@ impl<'graph> RenderGraph<'graph> {
 
     pub fn string_graph(&self) -> Graph<String, String> {
         let get_resource_display = |handle| {
-            let resource = self.attachments.get_from_handle(handle).unwrap();
+            let resource = self.resources.get_from_handle(handle).unwrap();
             match resource {
-                Attachment::Persistent(id) => id.string_id.map_or(id.global_id.to_string(), |s| s.to_string()),
-                Attachment::Dynamic(uuid) => uuid.to_string()
+                Resource::Persistent(id) => id.string_id.map_or(id.global_id.to_string(), |s| s.to_string()),
+                Resource::Dynamic(uuid) => uuid.to_string()
             }
         };
 
         self.graph.map(|_, vertex| {
             let output = match vertex {
                 Vertex::Red(resource_handle) => {
-                    self.attachments.get_string_from_handle(resource_handle)
+                    self.resources.get_string_from_handle(resource_handle)
                         .or(Some(get_resource_display(resource_handle)))
                     .unwrap()
                 }
@@ -157,9 +157,9 @@ impl<'graph> RenderGraph<'graph> {
 
     pub fn compile(graph: &RenderGraph) {
         /* Algorithm:
-         * 1. Find all Red sources. These are attachments that are external dependencies
-         * 2. Find all Blue sources. These are passes with no defined input attachments:
-         *  they may have output attachments that need to be created
+         * 1. Find all Red sources. These are resources that are external dependencies
+         * 2. Find all Blue sources. These are passes with no defined input resources:
+         *  they may have output resources that need to be created
          * 3. Assert that all external dependencies are satisfied
          * 4. Reverse directions and perform topological sort on graph
          * 5. From topological sort, if the texture is not an external dependency, create

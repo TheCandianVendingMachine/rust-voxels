@@ -4,10 +4,10 @@ use winit::{
     window::{ self, WindowBuilder }
 };
 
-use crate::render_graph::attachment::{ Attachment, Id as AttachmentId };
+use crate::render_graph::resource::{ Resource, Id as ResourceId };
 use crate::render_graph::shader_builder::{ ShaderBuilder, WgslBuilder };
 use crate::render_graph::pipeline_builder::{ PipelineLayoutBuilder };
-use crate::render_graph::pass_builder::{ RenderPassBuilder, PassAttachment };
+use crate::render_graph::pass_builder::{ RenderPassBuilder, PassResource };
 use crate::render_graph::RenderGraph;
 use petgraph::dot::Dot;
 use uuid::Uuid;
@@ -19,27 +19,27 @@ fn create_render_graph<'a>() -> RenderGraph<'a> {
         Some("render_pipeline")
     );
 
-    let surface = render_graph.add_resource(Attachment::Persistent(AttachmentId::new_with_name("Surface")));
-    let texture_input = render_graph.add_resource(Attachment::Persistent(AttachmentId::new_with_name("Texture")));
-    let pp_input = render_graph.add_resource(Attachment::Persistent(AttachmentId::new_with_name("pp input")));
+    let surface = render_graph.add_resource(Resource::Persistent(ResourceId::new_with_name("Surface")));
+    let texture_input = render_graph.add_resource(Resource::Persistent(ResourceId::new_with_name("Texture")));
+    let pp_input = render_graph.add_resource(Resource::Persistent(ResourceId::new_with_name("pp input")));
     let (main_pass, main_pass_outputs) = render_graph.add_render_pass(
         RenderPassBuilder::render_pass(render_pipeline)
             .label("Test Pass")
-            .add_colour_attachment(PassAttachment::OnlyInput(texture_input.handle))
-            .add_colour_attachment(PassAttachment::InputAndOutput(surface.handle))
+            .add_colour_attachment(PassResource::OnlyInput(texture_input.handle))
+            .add_colour_attachment(PassResource::InputAndOutput(surface.handle))
     );
     let (cloud_pass, cloud_pass_outputs) = render_graph.add_render_pass(
         RenderPassBuilder::render_pass(render_pipeline)
             .label("Clouds")
-            .add_colour_attachment(PassAttachment::OnlyInput(texture_input.handle))
-            .add_colour_attachment(PassAttachment::OnlyOutput(None))
+            .add_colour_attachment(PassResource::OnlyInput(texture_input.handle))
+            .add_colour_attachment(PassResource::OnlyOutput(None))
     );
     let (pp_pass, pp_pass_outputs) = render_graph.add_render_pass(
         RenderPassBuilder::render_pass(render_pipeline)
             .label("Post Processing")
-            .add_colour_attachment(PassAttachment::OnlyInput(cloud_pass_outputs[0].handle))
-            .add_colour_attachment(PassAttachment::OnlyInput(pp_input.handle))
-            .add_colour_attachment(PassAttachment::InputAndOutput(main_pass_outputs[0].handle))
+            .add_colour_attachment(PassResource::OnlyInput(cloud_pass_outputs[0].handle))
+            .add_colour_attachment(PassResource::OnlyInput(pp_input.handle))
+            .add_colour_attachment(PassResource::InputAndOutput(main_pass_outputs[0].handle))
     );
 
     let out_graph = render_graph.string_graph();

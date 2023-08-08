@@ -1,5 +1,5 @@
 use uuid::Uuid;
-pub use crate::render_graph::handle_map::Handle as AttachmentHandle;
+pub use crate::render_graph::handle_map::Handle as ResourceHandle;
 
 #[derive(Debug, Copy, Clone)]
 pub struct Id<'id> {
@@ -24,16 +24,16 @@ impl Id<'_> {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub enum Attachment<'attachment> {
-    Persistent(Id<'attachment>),
+pub enum Resource<'resource> {
+    Persistent(Id<'resource>),
     Dynamic(Uuid)
 }
 
-impl<'a> Attachment<'a> {
-    pub fn into_persistent(&self) -> Attachment<'a> {
+impl<'a> Resource<'a> {
+    pub fn into_persistent(&self) -> Resource<'a> {
         match self {
-            Attachment::Persistent(id) => Attachment::Persistent(*id),
-            Attachment::Dynamic(uuid) => Attachment::Persistent(Id {
+            Resource::Persistent(id) => Resource::Persistent(*id),
+            Resource::Dynamic(uuid) => Resource::Persistent(Id {
                 global_id: *uuid,
                 string_id: None
             })

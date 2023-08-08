@@ -1,44 +1,44 @@
-use crate::render_graph::attachment::AttachmentHandle;
+use crate::render_graph::resource::ResourceHandle;
 use crate::render_graph::pipeline_builder::PipelineHandle;
 pub use crate::render_graph::handle_map::Handle as PassHandle;
 
 #[derive(Debug, Clone, Copy)]
-pub enum PassAttachment {
-    OnlyInput(AttachmentHandle),
-    OnlyOutput(Option<AttachmentHandle>),
-    InputAndOutput(AttachmentHandle)
+pub enum PassResource {
+    OnlyInput(ResourceHandle),
+    OnlyOutput(Option<ResourceHandle>),
+    InputAndOutput(ResourceHandle)
 }
 
-impl PassAttachment {
+impl PassResource {
     pub fn is_output(&self) -> bool {
         match self {
-            PassAttachment::OnlyOutput(_) => true,
-            PassAttachment::InputAndOutput(_) => true,
-            PassAttachment::OnlyInput(_) => false
+            PassResource::OnlyOutput(_) => true,
+            PassResource::InputAndOutput(_) => true,
+            PassResource::OnlyInput(_) => false
         }
     }
 
     pub fn is_input(&self) -> bool {
         match self {
-            PassAttachment::OnlyOutput(_) => false,
-            PassAttachment::InputAndOutput(_) => true,
-            PassAttachment::OnlyInput(_) => true
+            PassResource::OnlyOutput(_) => false,
+            PassResource::InputAndOutput(_) => true,
+            PassResource::OnlyInput(_) => true
         }
     }
 
     pub fn is_new_resource(&self) -> bool {
-        if let PassAttachment::OnlyOutput(resource) = *self {
+        if let PassResource::OnlyOutput(resource) = *self {
             resource.is_none()
         } else {
             false
         }
     }
 
-    pub fn resource_handle(&self) -> Option<AttachmentHandle> {
+    pub fn resource_handle(&self) -> Option<ResourceHandle> {
         match *self {
-            PassAttachment::OnlyOutput(resource) => resource,
-            PassAttachment::OnlyInput(resource) => Some(resource),
-            PassAttachment::InputAndOutput(resource) => Some(resource)
+            PassResource::OnlyOutput(resource) => resource,
+            PassResource::OnlyInput(resource) => Some(resource),
+            PassResource::InputAndOutput(resource) => Some(resource)
         }
     }
 }
@@ -46,8 +46,8 @@ impl PassAttachment {
 #[derive(Clone)]
 pub struct RenderPassBuilder<'pass> {
     pub label: Option<&'pass str>,
-    pub colour_attachments: Vec<PassAttachment>,
-    pub depth_stencil: Option<AttachmentHandle>,
+    pub colour_attachments: Vec<PassResource>,
+    pub depth_stencil: Option<ResourceHandle>,
     pub pipeline: PipelineHandle
 }
 
@@ -66,13 +66,17 @@ impl<'pass> RenderPassBuilder<'pass> {
         self
     }
 
-    pub fn add_colour_attachment(mut self, attachment: PassAttachment) -> Self {
+    pub fn add_colour_attachment(mut self, attachment: PassResource) -> Self {
         self.colour_attachments.push(attachment);
         self
     }
 
-    pub fn set_depth_stencil_attachment(mut self, depth_stencil: AttachmentHandle) -> Self {
+    pub fn set_depth_stencil_attachment(mut self, depth_stencil: ResourceHandle) -> Self {
         self.depth_stencil = Some(depth_stencil);
+        self
+    }
+
+    pub fn set_vertex_buffer(mut self) -> Self {
         self
     }
 }
