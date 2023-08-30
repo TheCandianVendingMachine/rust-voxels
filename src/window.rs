@@ -23,8 +23,6 @@ fn create_render_graph<'a>() -> RenderGraph<'a> {
     let depth_buffer = render_graph.add_resource(Resource::persistent_with_name("Depth"));
     let surface = render_graph.add_resource(Resource::persistent_with_name("Surface"));
     let texture_input = render_graph.add_resource(Resource::persistent_with_name("Texture"));
-    let pp_input = render_graph.add_resource(Resource::persistent_with_name("pp input"));
-    let pp_output = render_graph.add_resource(Resource::persistent_with_name("pp output"));
 
     let (main_pass, main_pass_outputs) = render_graph.add_render_pass(
         RenderPassBuilder::render_pass(render_pipeline)
@@ -33,20 +31,6 @@ fn create_render_graph<'a>() -> RenderGraph<'a> {
             .add_colour_attachment(PassResource::InputAndOutput(surface.handle))
             .set_vertex_buffer(PassResource::OnlyInput(triangle_buffer.handle))
             .set_depth_stencil_attachment(PassResource::InputAndOutput(depth_buffer.handle))
-    );
-    let (cloud_pass, cloud_pass_outputs) = render_graph.add_render_pass(
-        RenderPassBuilder::render_pass(render_pipeline)
-            .label("Clouds")
-            .add_colour_attachment(PassResource::OnlyInput(texture_input.handle))
-            .add_colour_attachment(PassResource::OnlyOutput(None))
-    );
-    let (pp_pass, pp_pass_outputs) = render_graph.add_render_pass(
-        RenderPassBuilder::render_pass(render_pipeline)
-            .label("Post Processing")
-            .add_colour_attachment(PassResource::OnlyInput(cloud_pass_outputs[0].handle))
-            .add_colour_attachment(PassResource::OnlyInput(pp_input.handle))
-            .add_colour_attachment(PassResource::InputAndOutput(main_pass_outputs[0].handle))
-            .add_colour_attachment(PassResource::OnlyOutput(Some(pp_output.handle)))
     );
 
     let out_graph = render_graph.string_graph();

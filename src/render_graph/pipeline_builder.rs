@@ -117,15 +117,3 @@ impl<'layout> PipelineLayoutBuilder<'layout> {
     }
 }
 
-enum PipelineBuilderType {
-    Render(RenderPipelineBuilder)
-}
-
-pub struct PipelineBuilder<'pipeline> {
-    label: Option<&'pipeline str>,
-    sub_builder: PipelineBuilderType
-}
-
-pub struct RenderPipelineBuilder {
-
-}

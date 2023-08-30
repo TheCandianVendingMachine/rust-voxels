@@ -1,3 +1,4 @@
+pub mod compiled_graph;
 pub mod resource;
 pub mod shader_builder;
 pub mod pass_builder;
@@ -161,12 +162,15 @@ impl<'graph> RenderGraph<'graph> {
         }, |_, _| "".to_string())
     }
 
-    pub fn compile(&self) {
+    pub fn compile<'compile_graph>(&self, device: &'compile_graph wgpu::Device) -> compiled_graph::CompiledGraph<'compile_graph> {
         /* Algorithm:
          * 1. Reverse directions and perform topological sort on graph
          * 2. From topological sort, if the resource is not an external dependency, create
          *  when needed. If the resource cannot be created (Input and a vertex buffer, for
          *  example), then panic
          */
+        let mut compiled_graph = compiled_graph::CompiledGraph::new(device);
+
+        compiled_graph
     }
 }
