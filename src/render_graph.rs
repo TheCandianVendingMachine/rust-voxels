@@ -6,6 +6,7 @@ pub mod handle_map;
 
 use uuid::Uuid;
 use petgraph::graph::{ NodeIndex, Graph };
+use petgraph::visit::{ Topo, ReversedEdges };
 use thiserror::Error;
 use std::collections::HashMap;
 
@@ -69,9 +70,14 @@ impl<'graph> RenderGraph<'graph> {
         let pass_handle = self.passes.add(pass.clone(), pass.label.map(|l| l.to_string()));
         let pass_node = self.graph.add_node(Vertex::Blue(pass_handle));
 
+        let resource_iter = pass.colour_attachments.iter()
+            .chain(pass.depth_stencil.iter())
+            .chain(pass.vertex_buffer.iter())
+            .chain(pass.index_buffer.iter());
+
         // Get all output resources from this pass builder
         // First, create any new resources we need
-        let new_outputs: Vec<Resource> = pass.colour_attachments.iter()
+        let new_outputs: Vec<Resource> = resource_iter.clone()
             .filter(|a| a.is_output())
             .filter(|a| a.is_new_resource())
             .map(|_| Resource::Dynamic(Uuid::new_v4()))
@@ -79,7 +85,7 @@ impl<'graph> RenderGraph<'graph> {
             .collect();
 
         // Get existing nodes from these resources
-        let existing_outputs: Vec<Resource> = pass.colour_attachments.iter()
+        let existing_outputs: Vec<Resource> = resource_iter.clone()
             .filter(|handle| handle.is_output())
             .filter_map(|handle| handle.resource_handle())
             .filter_map(|resource_handle| self.resources.get_from_handle(&resource_handle))
@@ -101,7 +107,7 @@ impl<'graph> RenderGraph<'graph> {
         }
  
         // Attach inputs to this render pass
-        pass.colour_attachments.iter()
+        resource_iter
             .filter_map(|handle| handle.resource_handle())
             .filter_map(|resource_handle| self.vertex_handle_map.get(&resource_handle))
             .for_each(|vertex_handle| { self.graph.add_edge(vertex_handle.node_index, pass_node, ()); });
@@ -155,15 +161,12 @@ impl<'graph> RenderGraph<'graph> {
         }, |_, _| "".to_string())
     }
 
-    pub fn compile(graph: &RenderGraph) {
+    pub fn compile(&self) {
         /* Algorithm:
-         * 1. Find all Red sources. These are resources that are external dependencies
-         * 2. Find all Blue sources. These are passes with no defined input resources:
-         *  they may have output resources that need to be created
-         * 3. Assert that all external dependencies are satisfied
-         * 4. Reverse directions and perform topological sort on graph
-         * 5. From topological sort, if the texture is not an external dependency, create
-         *  when needed
+         * 1. Reverse directions and perform topological sort on graph
+         * 2. From topological sort, if the resource is not an external dependency, create
+         *  when needed. If the resource cannot be created (Input and a vertex buffer, for
+         *  example), then panic
          */
     }
 }

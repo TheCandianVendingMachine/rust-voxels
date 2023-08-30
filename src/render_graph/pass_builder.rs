@@ -47,8 +47,10 @@ impl PassResource {
 pub struct RenderPassBuilder<'pass> {
     pub label: Option<&'pass str>,
     pub colour_attachments: Vec<PassResource>,
-    pub depth_stencil: Option<ResourceHandle>,
-    pub pipeline: PipelineHandle
+    pub depth_stencil: Option<PassResource>,
+    pub vertex_buffer: Option<PassResource>,
+    pub index_buffer: Option<PassResource>,
+    pub pipeline: PipelineHandle,
 }
 
 impl<'pass> RenderPassBuilder<'pass> {
@@ -57,6 +59,8 @@ impl<'pass> RenderPassBuilder<'pass> {
             label: None,
             colour_attachments: Vec::new(),
             depth_stencil: None,
+            vertex_buffer: None,
+            index_buffer: None,
             pipeline
         }
     }
@@ -71,12 +75,18 @@ impl<'pass> RenderPassBuilder<'pass> {
         self
     }
 
-    pub fn set_depth_stencil_attachment(mut self, depth_stencil: ResourceHandle) -> Self {
+    pub fn set_depth_stencil_attachment(mut self, depth_stencil: PassResource) -> Self {
         self.depth_stencil = Some(depth_stencil);
         self
     }
 
-    pub fn set_vertex_buffer(mut self) -> Self {
+    pub fn set_vertex_buffer(mut self, vertex_buffer: PassResource) -> Self {
+        self.vertex_buffer = Some(vertex_buffer);
+        self
+    }
+
+    pub fn set_index_buffer(mut self, index_buffer: PassResource) -> Self {
+        self.index_buffer = Some(index_buffer);
         self
     }
 }

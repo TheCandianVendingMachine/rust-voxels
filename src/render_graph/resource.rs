@@ -29,8 +29,30 @@ pub enum Resource<'resource> {
     Dynamic(Uuid)
 }
 
-impl<'a> Resource<'a> {
-    pub fn into_persistent(&self) -> Resource<'a> {
+impl<'resource> Resource<'resource> {
+    pub fn persistent_with_name(id: &'resource str) -> Self {
+        Resource::Persistent(Id::new_with_name(id))
+    }
+
+    pub fn persistent_without_name() -> Self {
+        Resource::Persistent(Id::new())
+    }
+
+    pub fn require_persistent(&self) {
+        match self {
+            Resource::Persistent(_) => {},
+            Resource::Dynamic(_) => panic!("Resource is not persistent")
+        }
+    }
+
+    pub fn require_dynamic(&self) {
+        match self {
+            Resource::Dynamic(_) => {},
+            Resource::Persistent(_) => panic!("Resource is not dynamic")
+        }
+    }
+
+    pub fn into_persistent(&self) -> Resource<'resource> {
         match self {
             Resource::Persistent(id) => Resource::Persistent(*id),
             Resource::Dynamic(uuid) => Resource::Persistent(Id {
