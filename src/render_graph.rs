@@ -18,6 +18,7 @@ use pipeline_builder::{ PipelineHandle, PipelineLayoutBuilder };
 use resource::{ ResourceHandle, Resource };
 use handle_map::{ HandleType, HandleMap, Handle };
 
+#[derive(Clone)]
 enum Vertex {
     Red(ResourceHandle),
     Blue(PassHandle)
@@ -46,11 +47,35 @@ pub enum RenderGraphResult {
     PassDoesNotExist
 }
 
+struct RenderGraphMeta {
+    forward_graph: Graph<Vertex, ()>,
+    reverse_graph: Graph<Vertex, ()>
+}
+
+impl RenderGraphMeta {
+    fn new() -> RenderGraphMeta {
+        RenderGraphMeta {
+            forward_graph: Graph::new(),
+            reverse_graph: Graph::new(),
+        }
+    }
+
+    fn add_node(&mut self, v: Vertex) -> NodeIndex {
+        self.forward_graph.add_node(v.clone());
+        self.reverse_graph.add_node(v)
+    }
+
+    fn add_edge(&mut self, from: NodeIndex, to: NodeIndex) {
+        self.forward_graph.add_edge(from, to, ());
+        self.reverse_graph.add_edge(to, from, ());
+    }
+}
+
 pub struct RenderGraph<'graph> {
     pipelines: HandleMap<PipelineHandle, PipelineLayoutBuilder<'graph>>,
     passes: HandleMap<PassHandle, RenderPassBuilder<'graph>>,
     resources: HandleMap<ResourceHandle, Resource<'graph>>,
-    graph: Graph<Vertex, ()>,
+    graph: RenderGraphMeta,
     vertex_handle_map: HashMap<Handle, VertexHandle>,
 }
 
@@ -60,7 +85,7 @@ impl<'graph> RenderGraph<'graph> {
             pipelines: HandleMap::new(),
             passes: HandleMap::new(),
             resources: HandleMap::new(),
-            graph: Graph::new(),
+            graph: RenderGraphMeta::new(),
             vertex_handle_map: HashMap::new(),
         }
     }
@@ -106,20 +131,20 @@ impl<'graph> RenderGraph<'graph> {
         );
 
         for vertex_handle in outputs.iter() {
-            self.graph.add_edge(pass_node, vertex_handle.node_index, ());
+            self.graph.add_edge(pass_node, vertex_handle.node_index);
         }
  
         // Attach inputs to this render pass
         resource_iter
             .filter_map(|handle| handle.resource_handle())
             .filter_map(|resource_handle| self.vertex_handle_map.get(&resource_handle))
-            .for_each(|vertex_handle| { self.graph.add_edge(vertex_handle.node_index, pass_node, ()); });
+            .for_each(|vertex_handle| { self.graph.add_edge(vertex_handle.node_index, pass_node); });
 
         new_outputs.iter()
             .map(|resource_handle| self.add_resource(resource_handle.into_persistent()))
             .collect::<Vec<VertexHandle>>()
             .iter()
-            .for_each(|vertex_handle| { self.graph.add_edge(vertex_handle.node_index, pass_node, ()); });
+            .for_each(|vertex_handle| { self.graph.add_edge(vertex_handle.node_index, pass_node); });
 
         let pass_vertex_handle = VertexHandle::new_from_node(pass_node, pass_handle);
         self.vertex_handle_map.insert(pass_handle, pass_vertex_handle);
@@ -147,7 +172,7 @@ impl<'graph> RenderGraph<'graph> {
             }
         };
 
-        self.graph.map(|_, vertex| {
+        self.graph.forward_graph.map(|_, vertex| {
             let output = match vertex {
                 Vertex::Red(resource_handle) => {
                     self.resources.get_string_from_handle(resource_handle)
