@@ -97,8 +97,6 @@ impl State {
         };
         surface.configure(&device, &config);
 
-        let _render_graph = create_render_graph();
-
         let shader = device.create_shader_module(
             ShaderBuilder::shader(&WgslBuilder::from_buffer(include_str!("triangle.wgsl")))
             .label("Shader")
@@ -149,6 +147,10 @@ impl State {
             config,
             render_pipeline
         }
+    }
+
+    fn compile_render_graph(&mut self) {
+        let compiled_render_graph = create_render_graph().compile(&self.device);
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -233,6 +235,7 @@ impl Window {
     }
 
     pub fn run(mut self) {
+        self.state.compile_render_graph();
         let event_loop = self.event_loop.take().unwrap();
         event_loop.run(move |event, _, control_flow| match event {
             Event::WindowEvent {

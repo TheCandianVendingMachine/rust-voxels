@@ -119,7 +119,7 @@ impl<'graph> CompiledGraph<'graph> {
                     wgpu::FragmentState {
                         module: &fs,
                         entry_point: Self::FRAGMENT_SHADER_ENTRY,
-                        targets: fragment_shader_builder.map_or(&[], |b| b.inputs),
+                        targets: fragment_shader_builder.unwrap().inputs,
                     },
                 ),
                 primitive: Self::PRIMITIVE_STATE,
