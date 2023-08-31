@@ -11,8 +11,8 @@ use uuid::Uuid;
 use crate::render_graph::{
     shader_builder::{ ShaderBuilder, ShaderSource },
     pass_builder::RenderPassBuilder,
-    pipeline_builder::PipelineLayoutBuilder,
 };
+use crate::render;
 
 pub struct ResourcePair<T> {
     id: Uuid,
@@ -25,6 +25,11 @@ impl<T> ResourcePair<T> {
             id, resource
         }
     }
+}
+
+pub struct ShaderData<'shader, I, S: Clone + std::fmt::Debug + ShaderSource<'shader>> {
+    module_builder: ResourcePair<ShaderBuilder<'shader, S>>,
+    inputs: &'shader [I]
 }
 
 pub struct CompiledGraph<'a> {
@@ -61,38 +66,42 @@ impl<'graph> CompiledGraph<'graph> {
     pub fn add_render_pipeline<VS, FS>(
         &'graph mut self,
         render_pipeline_id: Uuid,
-        render_pipeline_layout_builder: Option<ResourcePair<PipelineLayoutBuilder>>,
-        vertex_shader_builder: ResourcePair<ShaderBuilder<'graph, VS>>,
-        fragment_shader_builder: Option<ResourcePair<ShaderBuilder<'graph, FS>>>,
+        mut render_pipeline_layout_builder: Option<ResourcePair<&mut render::PipelineLayout<'graph>>>,
+        vertex_shader_builder: ShaderData<'graph, wgpu::VertexBufferLayout, VS>,
+        fragment_shader_builder: Option<ShaderData<'graph, Option<wgpu::ColorTargetState>, FS>>,
     ) where
         VS: ShaderSource<'graph> + std::fmt::Debug + Clone,
         FS: ShaderSource<'graph> + std::fmt::Debug + Clone
     {
         if !self.render_pipelines.contains_key(&render_pipeline_id) {
-            if !self.shaders.contains_key(&vertex_shader_builder.id) {
+            if !self.shaders.contains_key(&vertex_shader_builder.module_builder.id) {
                 self.shaders.insert(
-                    vertex_shader_builder.id,
-                    self.device.create_shader_module(vertex_shader_builder.resource.build())
+                    vertex_shader_builder.module_builder.id,
+                    self.device.create_shader_module(vertex_shader_builder.module_builder.resource.build())
                 );
             }
 
             if let Some(fs) = &fragment_shader_builder {
-                if !self.shaders.contains_key(&fs.id) {
+                if !self.shaders.contains_key(&fs.module_builder.id) {
                     self.shaders.insert(
-                        fs.id,
-                        self.device.create_shader_module(fs.resource.build())
+                        fs.module_builder.id,
+                        self.device.create_shader_module(fs.module_builder.resource.build())
                     );
                 }
             }
 
-            if let Some(layout) = &render_pipeline_layout_builder {
+            if let Some(layout) = &mut render_pipeline_layout_builder {
                 if !self.pipeline_layouts.contains_key(&layout.id) {
+                    self.pipeline_layouts.insert(
+                        layout.id,
+                        layout.resource.create(&self.device)
+                    );
                 }
             }
 
-            let vertex_shader = self.shaders.get(&vertex_shader_builder.id).unwrap();
-            let fragment_shader = fragment_shader_builder.map(
-                |b| self.shaders.get(&b.id).unwrap()
+            let vertex_shader = self.shaders.get(&vertex_shader_builder.module_builder.id).unwrap();
+            let fragment_shader = fragment_shader_builder.as_ref().map(
+                |b| self.shaders.get(&b.module_builder.id).unwrap()
             );
             let pipeline_layout = render_pipeline_layout_builder.map(
                 |b| self.pipeline_layouts.get(&b.id).unwrap()
@@ -104,17 +113,13 @@ impl<'graph> CompiledGraph<'graph> {
                 vertex: wgpu::VertexState {
                     module: &vertex_shader,
                     entry_point: Self::VERTEX_SHADER_ENTRY,
-                    buffers: &[]
+                    buffers: vertex_shader_builder.inputs
                 },
                 fragment: fragment_shader.map(|fs|
                     wgpu::FragmentState {
                         module: &fs,
                         entry_point: Self::FRAGMENT_SHADER_ENTRY,
-                        targets: &[/*Some(wgpu::ColorTargetState {
-                            format: config.format,
-                            blend: Some(wgpu::BlendState::REPLACE),
-                            write_mask: wgpu::ColorWrites::ALL,
-                        })*/],
+                        targets: fragment_shader_builder.map_or(&[], |b| b.inputs),
                     },
                 ),
                 primitive: Self::PRIMITIVE_STATE,
