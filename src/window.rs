@@ -4,25 +4,37 @@ use winit::{
     window::{ self, WindowBuilder }
 };
 
-use crate::render_graph::resource::{ Resource, Id as ResourceId };
-use crate::render_graph::shader_builder::{ ShaderBuilder, WgslBuilder };
-use crate::render_graph::pipeline_builder::{ PipelineLayoutBuilder };
+use crate::render_graph::resource::Resource;
+use crate::render_graph::shader_builder::{ ShaderStage, ShaderRepresentation, ShaderBuilder, WgslBuilder };
+use crate::render_graph::pipeline_builder::PipelineLayoutBuilder;
 use crate::render_graph::pass_builder::{ RenderPassBuilder, PassResource };
 use crate::render_graph::RenderGraph;
 use petgraph::dot::Dot;
-use uuid::Uuid;
+
+use std::collections::HashMap;
 
 fn create_render_graph<'a>() -> RenderGraph<'a> {
     let mut render_graph = RenderGraph::new();
-    let render_pipeline = render_graph.add_pipeline(
-        PipelineLayoutBuilder::layout().label("Render Pipeline Layout"),
-        Some("render_pipeline")
-    );
 
     let triangle_buffer = render_graph.add_resource(Resource::persistent_with_name("Triangle"));
     let depth_buffer = render_graph.add_resource(Resource::persistent_with_name("Depth"));
     let surface = render_graph.add_resource(Resource::persistent_with_name("Surface"));
     let texture_input = render_graph.add_resource(Resource::persistent_with_name("Texture"));
+    
+    let shader = render_graph.add_shader(
+        ShaderRepresentation::shader()
+            .add_stage(ShaderStage::Vertex).finish()
+            .add_stage(ShaderStage::Fragment)
+                .add_input(surface.handle)
+            .finish(),
+        Some("default_shader")
+    );
+
+    let render_pipeline = render_graph.add_pipeline(
+        PipelineLayoutBuilder::layout().label("Render Pipeline Layout"),
+        shader, Some(shader),
+        Some("render_pipeline")
+    );
 
     let (main_pass, main_pass_outputs) = render_graph.add_render_pass(
         RenderPassBuilder::render_pass(render_pipeline)
@@ -150,7 +162,13 @@ impl State {
     }
 
     fn compile_render_graph(&mut self) {
-        let compiled_render_graph = create_render_graph().compile(&self.device);
+        //let shader = ShaderBuilder::shader(&WgslBuilder::from_buffer(include_str!("triangle.wgsl"))).label("Shader");
+        /*let compiled_render_graph = create_render_graph().compile(
+            &self.device,
+            HashMap::from([
+                ("default_shader".to_string(), &shader) 
+            ])
+        );*/
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {

@@ -1,4 +1,52 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
+use crate::render_graph::resource::ResourceHandle;
+pub use crate::render_graph::handle_map::Handle as ShaderHandle;
+
+#[derive(Eq, PartialEq, Hash)]
+pub enum ShaderStage {
+    Vertex,
+    Fragment,
+    Compute
+}
+
+pub struct ShaderStageInputs {
+    stage: ShaderStage,
+    inputs: Vec<ResourceHandle>,
+    representation: ShaderRepresentation
+}
+
+impl ShaderStageInputs {
+    pub fn add_input(mut self, input: ResourceHandle) -> ShaderStageInputs {
+        self.inputs.push(input);
+        self
+    }
+
+    pub fn finish(mut self) -> ShaderRepresentation {
+        self.representation.stages.insert(self.stage, self.inputs).unwrap();
+        self.representation
+    }
+}
+
+pub struct ShaderRepresentation {
+    stages: HashMap<ShaderStage, Vec<ResourceHandle>>
+}
+
+impl ShaderRepresentation {
+    pub fn shader() -> ShaderRepresentation {
+        ShaderRepresentation {
+            stages: HashMap::new()
+        }
+    }
+
+    pub fn add_stage(self, stage: ShaderStage) -> ShaderStageInputs {
+        ShaderStageInputs {
+            stage,
+            inputs: Vec::new(),
+            representation: self
+        }
+    }
+}
 
 pub trait ShaderSource<'shader> {
     fn build(&self) -> wgpu::ShaderSource<'shader>;

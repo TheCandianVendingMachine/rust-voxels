@@ -9,13 +9,13 @@ pub use compiled_graph::CompiledGraph;
 
 use uuid::Uuid;
 use petgraph::graph::{ NodeIndex, Graph };
-use petgraph::visit::{ Topo, ReversedEdges };
 use thiserror::Error;
 use std::collections::HashMap;
 
 use pass_builder::{ PassHandle, RenderPassBuilder };
 use pipeline_builder::{ PipelineHandle, PipelineLayoutBuilder };
 use resource::{ ResourceHandle, Resource };
+use shader_builder::{ ShaderHandle, ShaderRepresentation, ShaderSource, ShaderBuilder };
 use handle_map::{ HandleType, HandleMap, Handle };
 
 #[derive(Clone)]
@@ -71,8 +71,15 @@ impl RenderGraphMeta {
     }
 }
 
+struct PipelineInfo<'info> {
+    builder: PipelineLayoutBuilder<'info>,
+    vertex_shader: ResourceHandle,
+    fragment_shader: Option<ResourceHandle>
+}
+
 pub struct RenderGraph<'graph> {
-    pipelines: HandleMap<PipelineHandle, PipelineLayoutBuilder<'graph>>,
+    shaders: HandleMap<ShaderHandle, ShaderRepresentation>,
+    pipelines: HandleMap<PipelineHandle, PipelineInfo<'graph>>,
     passes: HandleMap<PassHandle, RenderPassBuilder<'graph>>,
     resources: HandleMap<ResourceHandle, Resource<'graph>>,
     graph: RenderGraphMeta,
@@ -82,6 +89,7 @@ pub struct RenderGraph<'graph> {
 impl<'graph> RenderGraph<'graph> {
     pub fn new() -> RenderGraph<'graph> {
         RenderGraph {
+            shaders: HandleMap::new(),
             pipelines: HandleMap::new(),
             passes: HandleMap::new(),
             resources: HandleMap::new(),
@@ -90,8 +98,22 @@ impl<'graph> RenderGraph<'graph> {
         }
     }
 
-    pub fn add_pipeline(&mut self, layout: PipelineLayoutBuilder<'graph>, id: Option<&str>) -> PipelineHandle {
-        self.pipelines.add(layout, id.map(|id| id.to_string()))
+    pub fn add_shader(&mut self, shader: ShaderRepresentation, id: Option<&str>) -> ResourceHandle {
+        self.shaders.add(shader, id.map(|id| id.to_string()))
+    }
+
+    pub fn add_pipeline(&mut self,
+                        layout: PipelineLayoutBuilder<'graph>,
+                        vertex_shader: ResourceHandle,
+                        fragment_shader: Option<ResourceHandle>,
+                        id: Option<&str>
+    ) -> PipelineHandle {
+        self.pipelines.add(PipelineInfo {
+                builder: layout,
+                vertex_shader,
+                fragment_shader
+            }, id.map(|id| id.to_string())
+        )
     }
 
     pub fn add_render_pass(&mut self, pass: RenderPassBuilder<'graph>) -> (VertexHandle, Vec<VertexHandle>) {
@@ -189,7 +211,12 @@ impl<'graph> RenderGraph<'graph> {
         }, |_, _| "".to_string())
     }
 
-    pub fn compile<'compile_graph>(&self, device: &'compile_graph wgpu::Device) -> CompiledGraph<'compile_graph> {
+    pub fn compile<'compile_graph, S>(
+        &self,
+        device: &'compile_graph wgpu::Device,
+        shaders: HashMap<String, &ShaderBuilder<'compile_graph, S>>
+    ) -> CompiledGraph<'compile_graph> where
+        S: Clone + std::fmt::Debug + ShaderSource<'compile_graph> {
         /* Algorithm:
          * 1. Reverse directions and perform topological sort on graph
          * 2. From topological sort, if the resource is not an external dependency, create
@@ -197,6 +224,23 @@ impl<'graph> RenderGraph<'graph> {
          *  example), then panic
          */
         let mut compiled_graph = CompiledGraph::new(device);
+        let nodes_to_visit = petgraph::algo::toposort(&self.graph.reverse_graph, None).unwrap();
+
+        for node_index in nodes_to_visit {
+            let v = self.graph.forward_graph.node_weight(node_index).unwrap();
+            match v {
+                Vertex::Red(resource_handle) => {
+                },
+                Vertex::Blue(pass_handle) => {
+                    let pass = self.passes.get_from_handle(pass_handle).unwrap();
+                    let pipeline = self.pipelines.get_from_handle(&pass.pipeline).unwrap();
+                    /*compiled_graph.add_render_pipeline(
+                        pass.pipeline.uuid(),
+                        Some(compiled_graph::ResourcePair::new(pass.pipeline.uuid(), pipeline.builder)),
+                    );*/
+                },
+            }
+        }
 
         compiled_graph
     }

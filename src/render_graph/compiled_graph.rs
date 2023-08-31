@@ -28,8 +28,8 @@ impl<T> ResourcePair<T> {
 }
 
 pub struct ShaderData<'shader, I, S: Clone + std::fmt::Debug + ShaderSource<'shader>> {
-    module_builder: ResourcePair<ShaderBuilder<'shader, S>>,
-    inputs: &'shader [I]
+    pub module_builder: ResourcePair<ShaderBuilder<'shader, S>>,
+    pub inputs: &'shader [I]
 }
 
 pub struct CompiledGraph<'a> {
