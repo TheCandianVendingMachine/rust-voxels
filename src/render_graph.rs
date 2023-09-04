@@ -201,7 +201,7 @@ impl<'graph> RenderGraph<'graph> {
                         .or(Some(get_resource_display(resource_handle)))
                     .unwrap()
                 }
-                Vertex::Blue(pass_handle) => 
+                Vertex::Blue(pass_handle) =>
                     self.passes.get_string_from_handle(pass_handle)
                         .or(Some(pass_handle.uuid().to_string()))
                     .unwrap()
@@ -210,9 +210,18 @@ impl<'graph> RenderGraph<'graph> {
             output
         }, |_, _| "".to_string())
     }
+}
 
+pub mod compile {
+    use std::collections::HashMap;
+    use super::{
+        Vertex,
+        compiled_graph::{ CompiledGraph, ResourcePair, ShaderData },
+        shader_builder::{ ShaderSource, ShaderBuilder },
+        handle_map::HandleType
+    };
     pub fn compile<'compile_graph, S>(
-        &self,
+        graph: &super::RenderGraph,
         device: &'compile_graph wgpu::Device,
         shaders: HashMap<String, &ShaderBuilder<'compile_graph, S>>
     ) -> CompiledGraph<'compile_graph> where
@@ -224,19 +233,19 @@ impl<'graph> RenderGraph<'graph> {
          *  example), then panic
          */
         let mut compiled_graph = CompiledGraph::new(device);
-        let nodes_to_visit = petgraph::algo::toposort(&self.graph.reverse_graph, None).unwrap();
+        let nodes_to_visit = petgraph::algo::toposort(&graph.graph.reverse_graph, None).unwrap();
 
         for node_index in nodes_to_visit {
-            let v = self.graph.forward_graph.node_weight(node_index).unwrap();
+            let v = graph.graph.forward_graph.node_weight(node_index).unwrap();
             match v {
                 Vertex::Red(resource_handle) => {
                 },
                 Vertex::Blue(pass_handle) => {
-                    let pass = self.passes.get_from_handle(pass_handle).unwrap();
-                    let pipeline = self.pipelines.get_from_handle(&pass.pipeline).unwrap();
+                    let pass = graph.passes.get_from_handle(pass_handle).unwrap();
+                    let pipeline = graph.pipelines.get_from_handle(&pass.pipeline).unwrap();
                     /*compiled_graph.add_render_pipeline(
                         pass.pipeline.uuid(),
-                        Some(compiled_graph::ResourcePair::new(pass.pipeline.uuid(), pipeline.builder)),
+                        Some(ResourcePair::new(pass.pipeline.uuid(), pipeline.builder)),
                     );*/
                 },
             }
