@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use pass_builder::{ PassHandle, RenderPassBuilder };
 use pipeline_builder::{ PipelineHandle, PipelineLayoutBuilder };
 use resource::{ ResourceHandle, Resource };
-use shader_builder::{ ShaderHandle, ShaderRepresentation, ShaderSource, ShaderBuilder };
+use shader_builder::{ ShaderHandle, ShaderRepresentation };
 use handle_map::{ HandleType, HandleMap, Handle };
 
 #[derive(Clone)]
@@ -217,13 +217,13 @@ pub mod compile {
     use super::{
         Vertex,
         compiled_graph::{ CompiledGraph, ResourcePair, ShaderData },
-        shader_builder::{ ShaderSource, ShaderBuilder },
+        shader_builder::{ ShaderSource, ShaderBuilder, ShaderHandle },
         handle_map::HandleType
     };
     pub fn compile<'compile_graph, S>(
         graph: &super::RenderGraph,
         device: &'compile_graph wgpu::Device,
-        shaders: HashMap<String, &ShaderBuilder<'compile_graph, S>>
+        shaders: HashMap<ShaderHandle, &ShaderBuilder<'compile_graph, S>>
     ) -> CompiledGraph<'compile_graph> where
         S: Clone + std::fmt::Debug + ShaderSource<'compile_graph> {
         /* Algorithm:
@@ -243,6 +243,26 @@ pub mod compile {
                 Vertex::Blue(pass_handle) => {
                     let pass = graph.passes.get_from_handle(pass_handle).unwrap();
                     let pipeline = graph.pipelines.get_from_handle(&pass.pipeline).unwrap();
+
+                    let vertex_shader = ShaderData {
+                        module_builder: ResourcePair::new(
+                            pipeline.vertex_shader.uuid(),
+                            (*shaders.get(&pipeline.vertex_shader).unwrap()).clone()
+                        ),
+                        inputs: &[0]
+                    };
+
+                    let fragment_shader = pipeline.fragment_shader.map(
+                        |fs| { 
+                            ShaderData {
+                                module_builder: ResourcePair::new(
+                                    fs.uuid(),
+                                    (*shaders.get(&fs).unwrap()).clone()
+                                ),
+                                inputs: &[0]
+                            }
+                        }
+                    );
                     /*compiled_graph.add_render_pipeline(
                         pass.pipeline.uuid(),
                         Some(ResourcePair::new(pass.pipeline.uuid(), pipeline.builder)),
