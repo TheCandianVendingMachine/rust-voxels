@@ -45,6 +45,12 @@ pub struct CompiledGraph<'a> {
 impl<'graph> CompiledGraph<'graph> {
     const VERTEX_SHADER_ENTRY: &'static str = "vs_main";
     const FRAGMENT_SHADER_ENTRY: &'static str = "fs_main";
+    const DEFAULT_CLEAR_COLOUR: wgpu::Color = wgpu::Color {
+        r: 1.0,
+        g: 0.0,
+        b: 1.0,
+        a: 1.0
+    };
     const PRIMITIVE_STATE: wgpu::PrimitiveState = wgpu::PrimitiveState {
         topology: wgpu::PrimitiveTopology::TriangleList,
         strip_index_format: None,
@@ -55,12 +61,14 @@ impl<'graph> CompiledGraph<'graph> {
         conservative: false
     };
 
-    pub fn compile_from_definition<S>(
+    pub fn compile_from_graph<S>(
         graph: &'graph super::RenderGraph,
         device: &wgpu::Device,
-        shaders: HashMap<ShaderHandle, &ShaderBuilder<'graph, S>>,
+        shaders: &HashMap<ShaderHandle, &ShaderBuilder<'graph, S>>,
         vertex_buffer_layout: &'graph [wgpu::VertexBufferLayout],
-        colour_target_state: &'graph [Option<wgpu::ColorTargetState>]
+        colour_target_state: &'graph [Option<wgpu::ColorTargetState>],
+        vertex_buffer_attachments: &HashMap<ResourceHandle, wgpu::BufferSlice>,
+        colour_attachments: &HashMap<ResourceHandle, wgpu::RenderPassColorAttachment>
     ) -> CompiledGraph<'graph> where
         S: Clone + std::fmt::Debug + ShaderSource<'graph> {
         /* Algorithm:
@@ -103,7 +111,12 @@ impl<'graph> CompiledGraph<'graph> {
                     );
 
                     // Create render pass from pipeline
-                    compiled_graph.create_render_pass(device, pass.pipeline.uuid());
+                    compiled_graph.create_render_pass(
+                        device,
+                        pass,
+                        vertex_buffer_attachments,
+                        colour_attachments
+                    );
                 },
             }
         }
@@ -114,34 +127,27 @@ impl<'graph> CompiledGraph<'graph> {
     fn create_render_pass<'render_pass>(
         &'render_pass mut self,
         device: &wgpu::Device,
-        pipeline_id: Uuid
+        render_pass: &RenderPassBuilder,
+        vertex_buffer_attachments: &HashMap<ResourceHandle, wgpu::BufferSlice>,
+        colour_attachments: &HashMap<ResourceHandle, wgpu::RenderPassColorAttachment>
     ) {
-        let pipeline = self.render_pipelines.get(&pipeline_id).unwrap();
+        let pipeline = self.render_pipelines.get(&render_pass.pipeline.uuid()).unwrap();
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder")
         });
 
         {
-            /*let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let attachments: Vec<Option<wgpu::RenderPassColorAttachment>> = render_pass.colour_attachments.iter()
+                .map(|h| Some(colour_attachments.get(&h.resource_handle().unwrap()).unwrap().clone()))
+            .collect();
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0
-                        }),
-                        store: true
-                    }
-                })],
+                color_attachments: &attachments,
                 depth_stencil_attachment: None
             });
 
             render_pass.set_pipeline(&pipeline);
-            render_pass.draw(0..3, 0..1);*/
+            render_pass.draw(0..3, 0..1);
         }
     }
 
