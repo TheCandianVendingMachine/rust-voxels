@@ -9,8 +9,11 @@ use wgpu::{
 };
 use uuid::Uuid;
 use crate::render_graph::{
-    shader_builder::{ ShaderBuilder, ShaderSource },
+    shader_builder::{ ShaderBuilder, ShaderSource, ShaderHandle },
     pass_builder::RenderPassBuilder,
+    resource::ResourceHandle,
+    handle_map::HandleType,
+    Vertex
 };
 use crate::render;
 
@@ -33,7 +36,6 @@ pub struct ShaderData<'shader, I, S: Clone + std::fmt::Debug + ShaderSource<'sha
 }
 
 pub struct CompiledGraph<'a> {
-    device: &'a Device,
     shaders: HashMap<Uuid, ShaderModule>,
     pipeline_layouts: HashMap<Uuid, PipelineLayout>,
     render_pipelines: HashMap<Uuid, RenderPipeline>,
@@ -53,18 +55,80 @@ impl<'graph> CompiledGraph<'graph> {
         conservative: false
     };
 
-    pub fn new(device: &'graph Device) -> CompiledGraph<'graph> {
-        CompiledGraph {
-            device,
-            pipeline_layouts: HashMap::new(),
+    pub fn compile_from_definition<'compile_graph,'device: 'compile_graph, S>(
+        graph: &'compile_graph super::RenderGraph,
+        device: &'device wgpu::Device,
+        shaders: HashMap<ShaderHandle, &ShaderBuilder<'compile_graph, S>>,
+        vertex_buffer_layout: &'compile_graph [wgpu::VertexBufferLayout],
+        colour_target_state: &'compile_graph [Option<wgpu::ColorTargetState>]
+    ) -> CompiledGraph<'compile_graph> where
+        S: Clone + std::fmt::Debug + ShaderSource<'compile_graph> {
+        /* Algorithm:
+         * 1. Reverse directions and perform topological sort on graph
+         * 2. From topological sort, if the resource is not an external dependency, create
+         *  when needed. If the resource cannot be created (Input and a vertex buffer, for
+         *  example), then panic
+         */
+        let mut compiled_graph = CompiledGraph {
             shaders: HashMap::new(),
+            pipeline_layouts: HashMap::new(),
             render_pipelines: HashMap::new(),
             render_passes: HashMap::new()
+        };
+        let nodes_to_visit = petgraph::algo::toposort(&graph.graph.reverse_graph, None).unwrap();
+
+        let mut pipeline_layouts = HashMap::new();
+
+        for node_index in nodes_to_visit {
+            let v = graph.graph.forward_graph.node_weight(node_index).unwrap();
+            match v {
+                Vertex::Red(resource_handle) => {
+                },
+                Vertex::Blue(pass_handle) => {
+                    let pass = graph.passes.get_from_handle(pass_handle).unwrap();
+                    let pipeline = graph.pipelines.get_from_handle(&pass.pipeline).unwrap();
+
+                    if !pipeline_layouts.contains_key(&pass.pipeline) {
+                        pipeline_layouts.insert(pass.pipeline, pipeline.builder.clone().build());
+                    }
+
+                    let vertex_shader = ShaderData {
+                        module_builder: ResourcePair::new(
+                            pipeline.vertex_shader.uuid(),
+                            (*shaders.get(&pipeline.vertex_shader).unwrap()).clone()
+                        ),
+                        inputs: vertex_buffer_layout
+                    };
+
+                    let fragment_shader = pipeline.fragment_shader.map(
+                        |fs| { 
+                            ShaderData {
+                                module_builder: ResourcePair::new(
+                                    fs.uuid(),
+                                    (*shaders.get(&fs).unwrap()).clone()
+                                ),
+                                inputs: colour_target_state
+                            }
+                        }
+                    );
+                    let pipeline_layout = pipeline_layouts.get_mut(&pass.pipeline).unwrap();
+                    compiled_graph.add_render_pipeline(
+                        device,
+                        pass.pipeline.uuid(),
+                        Some(ResourcePair::new(pass.pipeline.uuid(), pipeline_layout)),
+                        vertex_shader,
+                        fragment_shader
+                    );
+                },
+            }
         }
+
+        compiled_graph
     }
 
-    pub fn add_render_pipeline<VS, FS>(
-        &'graph mut self,
+    fn add_render_pipeline<VS, FS>(
+        &mut self,
+        device: &wgpu::Device,
         render_pipeline_id: Uuid,
         mut render_pipeline_layout_builder: Option<ResourcePair<&mut render::PipelineLayout<'graph>>>,
         vertex_shader_builder: ShaderData<'graph, wgpu::VertexBufferLayout, VS>,
@@ -77,7 +141,7 @@ impl<'graph> CompiledGraph<'graph> {
             if !self.shaders.contains_key(&vertex_shader_builder.module_builder.id) {
                 self.shaders.insert(
                     vertex_shader_builder.module_builder.id,
-                    self.device.create_shader_module(vertex_shader_builder.module_builder.resource.build())
+                    device.create_shader_module(vertex_shader_builder.module_builder.resource.build())
                 );
             }
 
@@ -85,7 +149,7 @@ impl<'graph> CompiledGraph<'graph> {
                 if !self.shaders.contains_key(&fs.module_builder.id) {
                     self.shaders.insert(
                         fs.module_builder.id,
-                        self.device.create_shader_module(fs.module_builder.resource.build())
+                        device.create_shader_module(fs.module_builder.resource.build())
                     );
                 }
             }
@@ -94,7 +158,7 @@ impl<'graph> CompiledGraph<'graph> {
                 if !self.pipeline_layouts.contains_key(&layout.id) {
                     self.pipeline_layouts.insert(
                         layout.id,
-                        layout.resource.create(&self.device)
+                        layout.resource.create(&device)
                     );
                 }
             }
@@ -134,7 +198,7 @@ impl<'graph> CompiledGraph<'graph> {
 
             self.render_pipelines.insert(
                 render_pipeline_id,
-                self.device.create_render_pipeline(&render_pipeline_descriptor)
+                device.create_render_pipeline(&render_pipeline_descriptor)
             );
         }
     }
