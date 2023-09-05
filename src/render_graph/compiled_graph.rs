@@ -13,7 +13,7 @@ use crate::render_graph::{
     pass_builder::RenderPassBuilder,
     resource::ResourceHandle,
     handle_map::HandleType,
-    Vertex
+    Vertex, PipelineInfo
 };
 use crate::render;
 
@@ -55,7 +55,7 @@ impl<'graph> CompiledGraph<'graph> {
         conservative: false
     };
 
-    pub fn compile_from_definition<'compile_graph,'device: 'compile_graph, S>(
+    pub fn compile_from_definition<'compile_graph, 'device: 'compile_graph, S>(
         graph: &'compile_graph super::RenderGraph,
         device: &'device wgpu::Device,
         shaders: HashMap<ShaderHandle, &ShaderBuilder<'compile_graph, S>>,
@@ -87,38 +87,23 @@ impl<'graph> CompiledGraph<'graph> {
                 Vertex::Blue(pass_handle) => {
                     let pass = graph.passes.get_from_handle(pass_handle).unwrap();
                     let pipeline = graph.pipelines.get_from_handle(&pass.pipeline).unwrap();
-
                     if !pipeline_layouts.contains_key(&pass.pipeline) {
                         pipeline_layouts.insert(pass.pipeline, pipeline.builder.clone().build());
                     }
-
-                    let vertex_shader = ShaderData {
-                        module_builder: ResourcePair::new(
-                            pipeline.vertex_shader.uuid(),
-                            (*shaders.get(&pipeline.vertex_shader).unwrap()).clone()
-                        ),
-                        inputs: vertex_buffer_layout
-                    };
-
-                    let fragment_shader = pipeline.fragment_shader.map(
-                        |fs| { 
-                            ShaderData {
-                                module_builder: ResourcePair::new(
-                                    fs.uuid(),
-                                    (*shaders.get(&fs).unwrap()).clone()
-                                ),
-                                inputs: colour_target_state
-                            }
-                        }
-                    );
                     let pipeline_layout = pipeline_layouts.get_mut(&pass.pipeline).unwrap();
-                    compiled_graph.add_render_pipeline(
+                    // Create wgpu pipeline if it doesnt exist already
+                    compiled_graph.create_pipeline(
+                        pass,
+                        pipeline,
+                        pipeline_layout,
                         device,
-                        pass.pipeline.uuid(),
-                        Some(ResourcePair::new(pass.pipeline.uuid(), pipeline_layout)),
-                        vertex_shader,
-                        fragment_shader
+                        &shaders,
+                        vertex_buffer_layout,
+                        colour_target_state
                     );
+
+                    // Create render pass from pipeline
+                    compiled_graph.create_render_pass();
                 },
             }
         }
@@ -126,16 +111,66 @@ impl<'graph> CompiledGraph<'graph> {
         compiled_graph
     }
 
-    fn add_render_pipeline<VS, FS>(
-        &mut self,
+    fn create_render_pass(
+        &mut self
+    ) {
+    }
+
+    fn create_pipeline<'pipeline, S>(
+        &'pipeline mut self,
+        pass_builder: &RenderPassBuilder,
+        pipeline_info: &PipelineInfo,
+        pipeline_layout: &mut render::PipelineLayout<'graph>,
+        device: &'graph wgpu::Device,
+        shaders: &HashMap<ShaderHandle, &ShaderBuilder<'graph, S>>,
+        vertex_buffer_layout: &'graph [wgpu::VertexBufferLayout],
+        colour_target_state: &'graph [Option<wgpu::ColorTargetState>]
+    ) -> &'pipeline RenderPipeline where
+        S: Clone + std::fmt::Debug + ShaderSource<'graph>,
+    {
+        if !self.render_pipelines.contains_key(&pass_builder.pipeline.uuid()) {
+            return self.render_pipelines.get(&pass_builder.pipeline.uuid()).unwrap()
+        }
+
+        let vertex_shader = ShaderData {
+            module_builder: ResourcePair::new(
+                pipeline_info.vertex_shader.uuid(),
+                (*shaders.get(&pipeline_info.vertex_shader).unwrap()).clone()
+            ),
+            inputs: vertex_buffer_layout
+        };
+
+        let fragment_shader = pipeline_info.fragment_shader.map(
+            |fs| { 
+                ShaderData {
+                    module_builder: ResourcePair::new(
+                        fs.uuid(),
+                        (*shaders.get(&fs).unwrap()).clone()
+                    ),
+                    inputs: colour_target_state
+                }
+            }
+        );
+
+        self.add_render_pipeline(
+            device,
+            pass_builder.pipeline.uuid(),
+            Some(ResourcePair::new(pass_builder.pipeline.uuid(), pipeline_layout)),
+            vertex_shader,
+            fragment_shader
+        )
+    }
+
+    fn add_render_pipeline<'pipeline, VS, FS>(
+        &'pipeline mut self,
         device: &wgpu::Device,
         render_pipeline_id: Uuid,
         mut render_pipeline_layout_builder: Option<ResourcePair<&mut render::PipelineLayout<'graph>>>,
         vertex_shader_builder: ShaderData<'graph, wgpu::VertexBufferLayout, VS>,
         fragment_shader_builder: Option<ShaderData<'graph, Option<wgpu::ColorTargetState>, FS>>,
-    ) where
+    ) -> &'pipeline RenderPipeline where
         VS: ShaderSource<'graph> + std::fmt::Debug + Clone,
-        FS: ShaderSource<'graph> + std::fmt::Debug + Clone
+        FS: ShaderSource<'graph> + std::fmt::Debug + Clone,
     {
         if !self.render_pipelines.contains_key(&render_pipeline_id) {
             if !self.shaders.contains_key(&vertex_shader_builder.module_builder.id) {
@@ -201,5 +236,6 @@ impl<'graph> CompiledGraph<'graph> {
                 device.create_render_pipeline(&render_pipeline_descriptor)
             );
         }
+        self.render_pipelines.get(&render_pipeline_id).unwrap()
     }
 }
