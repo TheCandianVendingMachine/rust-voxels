@@ -1,4 +1,3 @@
-mod resource;
 pub mod api;
 
 use crate::render::Queue;

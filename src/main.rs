@@ -5,6 +5,7 @@ mod grid;
 mod voxel;
 mod ray;
 //mod window;
+mod resource;
 mod render_engine;
 mod render_graph;
 mod render;

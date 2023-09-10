@@ -93,6 +93,17 @@ pub struct ResourceManager<R, C, D> where
     reference_manager: Arc<RwLock<ResourceReferenceManager>>
 }
 
+impl<R, C, D> std::ops::Drop for ResourceManager<R, C, D>  where
+    C: FnMut(&ResourceMetaData) -> R,
+    D: FnMut(R) {
+    fn drop(&mut self) {
+        for resource_handle in self.resources.get_all_elements() {
+            let (_, resource) = self.resources.remove(resource_handle);
+            (self.on_resource_destroy)(resource.unwrap());
+        }
+    }
+}
+
 impl<R, C, D> ResourceManager<R, C, D> where
     C: FnMut(&ResourceMetaData) -> R,
     D: FnMut(R) {
@@ -119,14 +130,14 @@ impl<R, C, D> ResourceManager<R, C, D> where
 
     pub fn upkeep(&mut self) {
         for resource in self.reference_manager.write().unwrap().upkeep() {
-            let resource_dropped = self.resources.remove(resource);
+            let (_, resource_dropped) = self.resources.remove(resource);
             // The buffer can be overflowed with mass creation and deletion of objects
             // To avoid moves, we will ensure that we can never overrun the buffer by
             // deleting when the buffer is filled
             if self.resources_being_destroyed.len() == Self::RESOURCES_TO_DESTROY_PER_UPKEEP {
-                (self.on_resource_destroy)(resource_dropped.1.unwrap());
+                (self.on_resource_destroy)(resource_dropped.unwrap());
             } else {
-                self.resources_being_destroyed.push(resource_dropped.1.unwrap());
+                self.resources_being_destroyed.push(resource_dropped.unwrap());
             }
         }
 
@@ -179,11 +190,18 @@ impl<R, C, D> ResourceManager<R, C, D> where
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+/// How long the resource lasts after all references run out
 pub enum ResourceLifetime {
+    /// Destroyed immediately
+    None,
+    /// The resource is unlikely to be loaded again
     Short,
+    /// The resource may be loaded again
     Medium,
+    /// We expect the resource to be loaded again
     Long,
-    Infinite
+    /// Never destroyed until the main resource manager is dropped
+    Forever
 }
 
 struct ResourceReferenceManager {
@@ -193,11 +211,12 @@ struct ResourceReferenceManager {
 }
 
 impl ResourceReferenceManager {
-    const LIFETIMES: [(ResourceLifetime, Duration); 4] = [
+    const LIFETIMES: [(ResourceLifetime, Duration); 5] = [
+        (ResourceLifetime::None, Duration::ZERO),
         (ResourceLifetime::Short, Duration::from_secs(3)),
         (ResourceLifetime::Medium, Duration::from_secs(60)),
         (ResourceLifetime::Long, Duration::from_secs(5 * 60)),
-        (ResourceLifetime::Infinite, Duration::MAX)
+        (ResourceLifetime::Forever, Duration::MAX)
     ];
 
     fn new() -> ResourceReferenceManager {
@@ -225,7 +244,7 @@ impl ResourceReferenceManager {
             .expect("Resource must be created before it is activated")
         .reference_count += 1;
 
-        self.active_resources.insert(self.all_resources.get(&resource).unwrap().clone());
+        self.active_resources.insert(*self.all_resources.get(&resource).unwrap());
     }
 
     fn deactivate(&mut self, resource: ElementHandle) {
@@ -296,6 +315,8 @@ impl PartialOrd for ResourceReference {
 }
 impl Ord for ResourceReference {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // If a reference doesnt have any deletion time, then it should always be said to
+        // be deleted after one with a valid deletion time
         if let None = self.deletion_time {
             std::cmp::Ordering::Greater
         } else if let None = other.deletion_time {
