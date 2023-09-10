@@ -56,12 +56,12 @@ pub trait ShaderSource<'shader> {
 pub struct ShaderBuilder<'shader, S> where
     S: ShaderSource<'shader> + std::fmt::Debug + Clone {
     label: Option<&'shader str>,
-    shader: &'shader S
+    shader: S
 }
 
 impl<'shader, S> ShaderBuilder<'shader, S> where
     S: ShaderSource<'shader> + std::fmt::Debug + Clone { 
-    pub fn shader(shader: &'shader S) -> Self {
+    pub fn shader(shader: S) -> Self {
         ShaderBuilder {
             label: None,
             shader
@@ -93,7 +93,12 @@ impl<'shader> ShaderSource<'shader> for WgslBuilder<'shader> {
 }
 
 impl WgslBuilder<'_> {
-    pub fn from_buffer(source: &'static str) -> WgslBuilder {
+    pub fn from_file<'s, P: AsRef<std::path::Path>>(source: P) -> WgslBuilder<'s> {
+        let file_as_string = std::fs::read_to_string(source).unwrap();
+        WgslBuilder::from_buffer(file_as_string.as_str())
+    }
+
+    pub fn from_buffer<'s>(source: &'s str) -> WgslBuilder {
         WgslBuilder {
             source: Cow::from(source)
         }

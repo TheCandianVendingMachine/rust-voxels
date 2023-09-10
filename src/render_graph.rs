@@ -98,7 +98,7 @@ impl<'graph> RenderGraph<'graph> {
         }
     }
 
-    pub fn add_shader(&mut self, shader: ShaderRepresentation, id: Option<&str>) -> ResourceHandle {
+    pub fn add_shader(&mut self, shader: ShaderRepresentation, id: Option<&str>) -> ShaderHandle {
         self.shaders.add(shader, id.map(|id| id.to_string()))
     }
 

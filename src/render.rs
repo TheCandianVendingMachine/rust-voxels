@@ -37,3 +37,8 @@ impl PipelineLayout<'_> {
 pub enum Attachment {
 
 }
+
+pub enum Queue {
+    Compute(wgpu::Queue),
+    Render(wgpu::Queue)
+}

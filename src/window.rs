@@ -4,63 +4,28 @@ use winit::{
     window::{ self, WindowBuilder }
 };
 
+use crate::render;
 use crate::render_graph::resource::Resource;
-use crate::render_graph::shader_builder::{ ShaderStage, ShaderRepresentation, ShaderBuilder, WgslBuilder };
+use crate::render_graph::shader_builder::{ ShaderHandle, ShaderStage, ShaderRepresentation, ShaderBuilder, WgslBuilder };
 use crate::render_graph::pipeline_builder::PipelineLayoutBuilder;
 use crate::render_graph::pass_builder::{ RenderPassBuilder, PassResource };
 use crate::render_graph::RenderGraph;
+use crate::render_graph::CompiledGraph;
 use petgraph::dot::Dot;
 
 use std::collections::HashMap;
 
-fn create_render_graph<'a>() -> RenderGraph<'a> {
-    let mut render_graph = RenderGraph::new();
-
-    let triangle_buffer = render_graph.add_resource(Resource::persistent_with_name("Triangle"));
-    let depth_buffer = render_graph.add_resource(Resource::persistent_with_name("Depth"));
-    let surface = render_graph.add_resource(Resource::persistent_with_name("Surface"));
-    let texture_input = render_graph.add_resource(Resource::persistent_with_name("Texture"));
-    
-    let shader = render_graph.add_shader(
-        ShaderRepresentation::shader()
-            .add_stage(ShaderStage::Vertex).finish()
-            .add_stage(ShaderStage::Fragment)
-                .add_input(surface.handle)
-            .finish(),
-        Some("default_shader")
-    );
-
-    let render_pipeline = render_graph.add_pipeline(
-        PipelineLayoutBuilder::layout().label("Render Pipeline Layout"),
-        shader, Some(shader),
-        Some("render_pipeline")
-    );
-
-    let (main_pass, main_pass_outputs) = render_graph.add_render_pass(
-        RenderPassBuilder::render_pass(render_pipeline)
-            .label("Test Pass")
-            .add_colour_attachment(PassResource::OnlyInput(texture_input.handle))
-            .add_colour_attachment(PassResource::InputAndOutput(surface.handle))
-            .set_vertex_buffer(PassResource::OnlyInput(triangle_buffer.handle))
-            .set_depth_stencil_attachment(PassResource::InputAndOutput(depth_buffer.handle))
-    );
-
-    let out_graph = render_graph.string_graph();
-    let dot = Dot::new(&out_graph);
-    std::fs::write("test.graph", format!("{:?}", dot)).unwrap();
-
-    render_graph
-}
-
-struct State {
+struct State<'s> {
     surface: wgpu::Surface,
     device: wgpu::Device,
-    queue: wgpu::Queue,
+    queue: render::Queue,
     config: wgpu::SurfaceConfiguration,
-    render_pipeline: wgpu::RenderPipeline,
+    shader_handle: ShaderHandle,
+    shader: ShaderBuilder<'s, WgslBuilder<'s>>,
+    render_graph: RenderGraph<'s>
 }
 
-impl State {
+impl State<'_> {
     async fn new(window: &window::Window) -> State {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
@@ -109,66 +74,53 @@ impl State {
         };
         surface.configure(&device, &config);
 
-        let shader = device.create_shader_module(
-            ShaderBuilder::shader(&WgslBuilder::from_buffer(include_str!("triangle.wgsl")))
-            .label("Shader")
-        .build());
+        let shader = ShaderBuilder::shader(WgslBuilder::from_file("triangle.wgsl"))
+            .label("Shader");
 
-        let mut render_pipeline_layout = PipelineLayoutBuilder::layout().label("Render Pipeline Layout").build();
-        let render_pipeline_layout = render_pipeline_layout.create(&device);
+        let mut render_graph = RenderGraph::new();
+        let triangle_buffer = render_graph.add_resource(Resource::persistent_with_name("Triangle"));
+        let depth_buffer = render_graph.add_resource(Resource::persistent_with_name("Depth"));
+        let surface_handle = render_graph.add_resource(Resource::persistent_with_name("Surface"));
+        let texture_input = render_graph.add_resource(Resource::persistent_with_name("Texture"));
+        
+        let shader_handle = render_graph.add_shader(
+            ShaderRepresentation::shader()
+                .add_stage(ShaderStage::Vertex).finish()
+                .add_stage(ShaderStage::Fragment)
+                    .add_input(surface_handle.handle)
+                .finish(),
+            Some("default_shader")
+        );
+        {
+            let render_pipeline = render_graph.add_pipeline(
+                PipelineLayoutBuilder::layout().label("Render Pipeline Layout"),
+                shader_handle, Some(shader_handle),
+                Some("render_pipeline")
+            );
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_main",
-                buffers: &[]
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false
-            },
-            multiview: None
-        });
+            let (main_pass, main_pass_outputs) = render_graph.add_render_pass(
+                RenderPassBuilder::render_pass(render_pipeline)
+                    .label("Triangle Pass")
+                    //.add_colour_attachment(PassResource::OnlyInput(texture_input.handle))
+                    .add_colour_attachment(PassResource::InputAndOutput(surface_handle.handle))
+                    //.set_vertex_buffer(PassResource::OnlyInput(triangle_buffer.handle))
+                    //.set_depth_stencil_attachment(PassResource::InputAndOutput(depth_buffer.handle))
+            );
+
+            let out_graph = render_graph.string_graph();
+            let dot = Dot::new(&out_graph);
+            std::fs::write("test.graph", format!("{:?}", dot)).unwrap();
+        };
 
         State {
             surface,
             device,
-            queue,
+            queue: render::Queue::Render(queue),
             config,
-            render_pipeline
+            shader_handle,
+            shader,
+            render_graph
         }
-    }
-
-    fn compile_render_graph(&mut self) {
-        //let shader = ShaderBuilder::shader(&WgslBuilder::from_buffer(include_str!("triangle.wgsl"))).label("Shader");
-        /*let compiled_render_graph = create_render_graph().compile(
-            &self.device,
-            HashMap::from([
-                ("default_shader".to_string(), &shader) 
-            ])
-        );*/
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -181,49 +133,32 @@ impl State {
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Render Encoder")
-        });
-
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0
-                        }),
-                        store: true
-                    }
-                })],
-                depth_stencil_attachment: None
-            });
-
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.draw(0..3, 0..1);
-        }
-
-        self.queue.submit(std::iter::once(encoder.finish()));
+        /*CompiledGraph::render_from_graph(
+            &self.render_graph, &self.device,
+            &[&self.queue],
+            &HashMap::from([
+                (self.shader_handle, self.shader)
+            ]),
+            &[],
+            &[],
+            &HashMap::new(),
+            &HashMap::new()
+        );*/
         output.present();
 
         Ok(())
     }
 }
 
-pub struct Window {
-    state: State,
+pub struct Window<'s> {
+    state: State<'s>,
     size: winit::dpi::PhysicalSize<u32>,
     event_loop: Option<EventLoop<()>>,
     window: window::Window
 }
 
-impl Window {
-    pub async fn new() -> Window {
+impl Window<'_> {
+    pub async fn new<'w>() -> Window<'w> {
         let event_loop = EventLoop::new();
         let window = WindowBuilder::new().build(&event_loop).unwrap();
         let size = window.inner_size();
@@ -253,7 +188,6 @@ impl Window {
     }
 
     pub fn run(mut self) {
-        self.state.compile_render_graph();
         let event_loop = self.event_loop.take().unwrap();
         event_loop.run(move |event, _, control_flow| match event {
             Event::WindowEvent {
