@@ -273,7 +273,7 @@ impl ResourceReferenceManager {
         let mut resources_to_delete = Vec::new();
         let now = Instant::now();
         while self.inactive_resources.peek().is_some_and(
-            |resource| resource.deletion_time.unwrap() < now
+            |resource| resource.deletion_time.unwrap() <= now
         ) {
             let resource = self.inactive_resources.peek().unwrap();
             if !self.active_resources.contains(&resource) {
