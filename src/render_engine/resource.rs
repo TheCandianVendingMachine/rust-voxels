@@ -1,6 +1,6 @@
 pub mod api {
     pub use super::ResourceManager;
-    pub use super::ResourceHandle;
+    pub use super::ResourceHandle as Resource;
 }
 
 use crate::sparse_set::{ SparseSet, ElementHandle };
@@ -11,17 +11,13 @@ use uuid::Uuid;
 use std::borrow::Cow;
 use std::path::{ Path, PathBuf };
 
-pub trait Resource where Self: Sized {
-    fn load_from_path(path: &PathBuf) -> Result<Self, ()>;
-}
-
-pub struct ResourceHandle<R: Resource> {
+pub struct ResourceHandle<R> {
     resource_handle: ElementHandle,
     manager: Arc<RwLock<ResourceReferenceManager>>,
     _resource_phantom: std::marker::PhantomData<R>
 }
 
-impl<R: Resource> ResourceHandle<R> {
+impl<R> ResourceHandle<R> {
     fn new(resource_handle: ElementHandle, manager: Arc<RwLock<ResourceReferenceManager>>) -> ResourceHandle<R> {
         manager.write().unwrap().activate(resource_handle);
         ResourceHandle {
@@ -32,14 +28,14 @@ impl<R: Resource> ResourceHandle<R> {
     }
 }
 
-impl<R: Resource> PartialEq for ResourceHandle<R> {
+impl<R> PartialEq for ResourceHandle<R> {
     fn eq(&self, other: &ResourceHandle<R>) -> bool {
         self.resource_handle.eq(&other.resource_handle)
     }
 }
-impl<R: Resource> Eq for ResourceHandle<R> {}
+impl<R> Eq for ResourceHandle<R> {}
 
-impl<R: Resource> Clone for ResourceHandle<R> {
+impl<R> Clone for ResourceHandle<R> {
     fn clone(&self) -> ResourceHandle<R> {
         self.manager.write().unwrap().activate(self.resource_handle);
         ResourceHandle {
@@ -50,7 +46,7 @@ impl<R: Resource> Clone for ResourceHandle<R> {
     }
 }
 
-impl<R: Resource> std::ops::Drop for ResourceHandle<R> {
+impl<R> std::ops::Drop for ResourceHandle<R> {
     fn drop(&mut self) {
         self.manager.write().unwrap().deactivate(self.resource_handle);
     }
@@ -58,22 +54,25 @@ impl<R: Resource> std::ops::Drop for ResourceHandle<R> {
 
 pub struct ResourceMetaData<'a> {
     uuid: Uuid,
+    lifetime: ResourceLifetime,
     name: Option<Cow<'a, str>>,
     path: Option<PathBuf>
 }
 
 impl<'s> ResourceMetaData<'s> {
-    pub fn new() -> ResourceMetaData<'s> {
+    pub fn new(lifetime: ResourceLifetime) -> ResourceMetaData<'s> {
         ResourceMetaData {
             uuid: Uuid::new_v4(),
+            lifetime,
             name: None,
             path: None
         }
     }
 
-    pub fn new_with_name(name: &'static str) -> ResourceMetaData<'s> {
+    pub fn new_with_name(name: &'static str, lifetime: ResourceLifetime) -> ResourceMetaData<'s> {
         ResourceMetaData {
             uuid: Uuid::new_v4(),
+            lifetime,
             name: Some(Cow::Borrowed(name)),
             path: None
         }
@@ -81,7 +80,6 @@ impl<'s> ResourceMetaData<'s> {
 }
 
 pub struct ResourceManager<R, C, D> where
-    R: Resource,
     C: FnMut(&ResourceMetaData) -> R,
     D: FnMut(R) {
     last_resource_id: usize,
@@ -96,7 +94,6 @@ pub struct ResourceManager<R, C, D> where
 }
 
 impl<R, C, D> ResourceManager<R, C, D> where
-    R: Resource,
     C: FnMut(&ResourceMetaData) -> R,
     D: FnMut(R) {
     const RESOURCES_TO_DESTROY_PER_UPKEEP: usize = 10;
@@ -116,8 +113,8 @@ impl<R, C, D> ResourceManager<R, C, D> where
         }
     }
 
-    fn create_resource_handle(&self, element: ElementHandle) -> api::ResourceHandle<R> {
-        api::ResourceHandle::new(element, self.reference_manager.clone())
+    fn create_resource_handle(&self, element: ElementHandle) -> api::Resource<R> {
+        api::Resource::new(element, self.reference_manager.clone())
     }
 
     pub fn upkeep(&mut self) {
@@ -139,26 +136,26 @@ impl<R, C, D> ResourceManager<R, C, D> where
         }
     }
 
-    pub fn get_from_path<P: AsRef<Path>>(&self, path: P) -> api::ResourceHandle<R> {
+    pub fn get_from_path<P: AsRef<Path>>(&self, path: P) -> api::Resource<R> {
         let path_buf = path.as_ref().to_path_buf();
         self.get_from_uuid(self.path_id_map.get(&path_buf).unwrap())
     }
 
-    pub fn get_from_name<N: AsRef<str>>(&self, name: N) -> api::ResourceHandle<R> {
+    pub fn get_from_name<N: AsRef<str>>(&self, name: N) -> api::Resource<R> {
         let name_str = name.as_ref().to_string();
         self.get_from_uuid(self.name_id_map.get(&name_str).unwrap())
     }
 
-    pub fn get_from_uuid(&self, uuid: &Uuid) -> api::ResourceHandle<R> {
+    pub fn get_from_uuid(&self, uuid: &Uuid) -> api::Resource<R> {
         let resource_id = *self.resource_id_map.get(uuid).unwrap();
         self.create_resource_handle(resource_id)
     }
 
-    pub fn get(&self, resource: &ResourceMetaData) -> api::ResourceHandle<R> {
+    pub fn get(&self, resource: &ResourceMetaData) -> api::Resource<R> {
         self.get_from_uuid(&resource.uuid)
     }
 
-    pub fn create(&mut self, meta_resource: &ResourceMetaData) -> api::ResourceHandle<R> {
+    pub fn create(&mut self, meta_resource: &ResourceMetaData) -> api::Resource<R> {
         self.last_resource_id += 1;
         let resource_id = ElementHandle(self.last_resource_id);
         self.resource_id_map.insert(meta_resource.uuid, resource_id);
@@ -172,17 +169,17 @@ impl<R, C, D> ResourceManager<R, C, D> where
             self.path_id_map.insert(path.to_path_buf(), meta_resource.uuid);
         }
 
-        self.reference_manager.write().unwrap().create(resource_id, ResourceLifetime::Medium);
+        self.reference_manager.write().unwrap().create(resource_id, meta_resource.lifetime);
         self.create_resource_handle(resource_id)
     }
 
-    pub fn resource(&self, handle: api::ResourceHandle<R>) -> &R {
+    pub fn resource(&self, handle: api::Resource<R>) -> &R {
         self.resources.get(handle.resource_handle).unwrap()
     }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-enum ResourceLifetime {
+pub enum ResourceLifetime {
     Short,
     Medium,
     Long,
