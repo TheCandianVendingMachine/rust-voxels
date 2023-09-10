@@ -4,12 +4,13 @@ mod colliders;
 mod grid;
 mod voxel;
 mod ray;
-mod window;
+//mod window;
+mod render_engine;
 mod render_graph;
 mod render;
 mod sparse_set;
 
 fn main() {
     env_logger::init();
-    pollster::block_on(window::Window::new()).run();
+    //pollster::block_on(window::Window::new()).run();
 }
