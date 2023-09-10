@@ -95,7 +95,9 @@ impl<'shader> ShaderSource<'shader> for WgslBuilder<'shader> {
 impl WgslBuilder<'_> {
     pub fn from_file<'s, P: AsRef<std::path::Path>>(source: P) -> WgslBuilder<'s> {
         let file_as_string = std::fs::read_to_string(source).unwrap();
-        WgslBuilder::from_buffer(file_as_string.as_str())
+        WgslBuilder {
+            source: Cow::Owned(file_as_string)
+        }
     }
 
     pub fn from_buffer<'s>(source: &'s str) -> WgslBuilder {
