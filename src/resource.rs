@@ -53,10 +53,10 @@ impl<R> std::ops::Drop for ResourceHandle<R> {
 }
 
 pub struct ResourceMetaData<'a> {
-    uuid: Uuid,
-    lifetime: ResourceLifetime,
-    name: Option<Cow<'a, str>>,
-    path: Option<PathBuf>
+    pub uuid: Uuid,
+    pub lifetime: ResourceLifetime,
+    pub name: Option<Cow<'a, str>>,
+    pub path: Option<PathBuf>
 }
 
 impl<'s> ResourceMetaData<'s> {
@@ -79,36 +79,36 @@ impl<'s> ResourceMetaData<'s> {
     }
 }
 
-pub struct ResourceManager<R, C, D> where
-    C: FnMut(&ResourceMetaData) -> R,
-    D: FnMut(R) {
+pub trait ResourceHandler<R> {
+    fn create(&mut self, meta_data: &ResourceMetaData) -> R;
+    fn destroy(&mut self, resource: R);
+}
+
+pub struct ResourceManager<'manager, R> {
     last_resource_id: usize,
     resource_id_map: HashMap<Uuid, ElementHandle>,
     name_id_map: HashMap<String, Uuid>,
     path_id_map: HashMap<PathBuf, Uuid>,
     resources: SparseSet<R>,
     resources_being_destroyed: Vec<R>,
-    on_resource_create: C,
-    on_resource_destroy: D,
-    reference_manager: Arc<RwLock<ResourceReferenceManager>>
+    reference_manager: Arc<RwLock<ResourceReferenceManager>>,
+    resource_handler: &'manager mut dyn ResourceHandler<R>
 }
 
-impl<R, C, D> std::ops::Drop for ResourceManager<R, C, D>  where
-    C: FnMut(&ResourceMetaData) -> R,
-    D: FnMut(R) {
+impl<R> std::ops::Drop for ResourceManager<'_, R> {
     fn drop(&mut self) {
         for resource_handle in self.resources.get_all_elements() {
             let (_, resource) = self.resources.remove(resource_handle);
-            (self.on_resource_destroy)(resource.unwrap());
+            self.resource_handler.destroy(resource.unwrap());
         }
     }
 }
 
-impl<R, C, D> ResourceManager<R, C, D> where
-    C: FnMut(&ResourceMetaData) -> R,
-    D: FnMut(R) {
+impl<R> ResourceManager<'_, R> {
     const RESOURCES_TO_DESTROY_PER_UPKEEP: usize = 10;
-    fn new<const MAX_RESOURCES: usize>(on_resource_create: C, on_resource_destroy: D) -> ResourceManager<R, C, D> {
+    pub fn new<'manager, const MAX_RESOURCES: usize>(
+        resource_handler: &'manager mut dyn ResourceHandler<R>
+    ) -> ResourceManager<'manager, R> {
         let mut resources_being_destroyed = Vec::new();
         resources_being_destroyed.reserve_exact(MAX_RESOURCES);
         ResourceManager {
@@ -118,9 +118,8 @@ impl<R, C, D> ResourceManager<R, C, D> where
             path_id_map: HashMap::new(),
             resources: SparseSet::new(MAX_RESOURCES),
             resources_being_destroyed,
-            on_resource_create,
-            on_resource_destroy,
-            reference_manager: Arc::new(RwLock::new(ResourceReferenceManager::new()))
+            reference_manager: Arc::new(RwLock::new(ResourceReferenceManager::new())),
+            resource_handler,
         }
     }
 
@@ -135,7 +134,7 @@ impl<R, C, D> ResourceManager<R, C, D> where
             // To avoid moves, we will ensure that we can never overrun the buffer by
             // deleting when the buffer is filled
             if self.resources_being_destroyed.len() == Self::RESOURCES_TO_DESTROY_PER_UPKEEP {
-                (self.on_resource_destroy)(resource_dropped.unwrap());
+                self.resource_handler.destroy(resource_dropped.unwrap());
             } else {
                 self.resources_being_destroyed.push(resource_dropped.unwrap());
             }
@@ -143,7 +142,7 @@ impl<R, C, D> ResourceManager<R, C, D> where
 
         for _ in 0..Self::RESOURCES_TO_DESTROY_PER_UPKEEP.min(self.resources_being_destroyed.len()) {
             let resource = self.resources_being_destroyed.pop().unwrap();
-            (self.on_resource_destroy)(resource);
+            self.resource_handler.destroy(resource);
         }
     }
 
@@ -170,7 +169,7 @@ impl<R, C, D> ResourceManager<R, C, D> where
         self.last_resource_id += 1;
         let resource_id = ElementHandle(self.last_resource_id);
         self.resource_id_map.insert(meta_resource.uuid, resource_id);
-        self.resources.push(resource_id, (self.on_resource_create)(meta_resource));
+        self.resources.push(resource_id, self.resource_handler.create(meta_resource));
 
         if let Some(name) = &meta_resource.name {
             self.name_id_map.insert(name.to_string(), meta_resource.uuid);
