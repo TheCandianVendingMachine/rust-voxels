@@ -84,7 +84,8 @@ pub trait ResourceHandler<R> {
     fn destroy(&mut self, resource: R);
 }
 
-pub struct ResourceManager<'manager, R> {
+pub struct ResourceManager<R, H> where
+    H: ResourceHandler<R> + Sized {
     last_resource_id: usize,
     resource_id_map: HashMap<Uuid, ElementHandle>,
     name_id_map: HashMap<String, Uuid>,
@@ -92,23 +93,25 @@ pub struct ResourceManager<'manager, R> {
     resources: SparseSet<R>,
     resources_being_destroyed: Vec<R>,
     reference_manager: Arc<RwLock<ResourceReferenceManager>>,
-    resource_handler: &'manager mut dyn ResourceHandler<R>
+    pub handler: H
 }
 
-impl<R> std::ops::Drop for ResourceManager<'_, R> {
+impl<R, H> std::ops::Drop for ResourceManager<R, H> where
+    H: ResourceHandler<R> + Sized {
     fn drop(&mut self) {
         for resource_handle in self.resources.get_all_elements() {
             let (_, resource) = self.resources.remove(resource_handle);
-            self.resource_handler.destroy(resource.unwrap());
+            self.handler.destroy(resource.unwrap());
         }
     }
 }
 
-impl<R> ResourceManager<'_, R> {
+impl<R, H> ResourceManager<R, H> where
+    H: ResourceHandler<R> + Sized {
     const RESOURCES_TO_DESTROY_PER_UPKEEP: usize = 10;
-    pub fn new<'manager, const MAX_RESOURCES: usize>(
-        resource_handler: &'manager mut dyn ResourceHandler<R>
-    ) -> ResourceManager<'manager, R> {
+    pub fn new<const MAX_RESOURCES: usize>(
+        handler: H
+    ) -> ResourceManager<R, H> {
         let mut resources_being_destroyed = Vec::new();
         resources_being_destroyed.reserve_exact(MAX_RESOURCES);
         ResourceManager {
@@ -119,7 +122,7 @@ impl<R> ResourceManager<'_, R> {
             resources: SparseSet::new(MAX_RESOURCES),
             resources_being_destroyed,
             reference_manager: Arc::new(RwLock::new(ResourceReferenceManager::new())),
-            resource_handler,
+            handler,
         }
     }
 
@@ -134,7 +137,7 @@ impl<R> ResourceManager<'_, R> {
             // To avoid moves, we will ensure that we can never overrun the buffer by
             // deleting when the buffer is filled
             if self.resources_being_destroyed.len() == Self::RESOURCES_TO_DESTROY_PER_UPKEEP {
-                self.resource_handler.destroy(resource_dropped.unwrap());
+                self.handler.destroy(resource_dropped.unwrap());
             } else {
                 self.resources_being_destroyed.push(resource_dropped.unwrap());
             }
@@ -142,7 +145,7 @@ impl<R> ResourceManager<'_, R> {
 
         for _ in 0..Self::RESOURCES_TO_DESTROY_PER_UPKEEP.min(self.resources_being_destroyed.len()) {
             let resource = self.resources_being_destroyed.pop().unwrap();
-            self.resource_handler.destroy(resource);
+            self.handler.destroy(resource);
         }
     }
 
@@ -169,7 +172,7 @@ impl<R> ResourceManager<'_, R> {
         self.last_resource_id += 1;
         let resource_id = ElementHandle(self.last_resource_id);
         self.resource_id_map.insert(meta_resource.uuid, resource_id);
-        self.resources.push(resource_id, self.resource_handler.create(meta_resource));
+        self.resources.push(resource_id, self.handler.create(meta_resource));
 
         if let Some(name) = &meta_resource.name {
             self.name_id_map.insert(name.to_string(), meta_resource.uuid);

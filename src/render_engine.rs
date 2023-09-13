@@ -3,7 +3,7 @@ mod texture;
 mod window;
 
 use crate::render::Queue;
-use crate::resource::{ ResourceManager, ResourceMetaData, ResourceLifetime };
+use crate::resource::{ ResourceHandler, ResourceManager, ResourceMetaData, ResourceLifetime };
 use window::Window;
 use wgpu::{
     Device, Adapter
@@ -44,12 +44,12 @@ impl DeviceState {
 
 pub struct RenderEngine<'engine> {
     instance: wgpu::Instance,
-    textures: ResourceManager<'engine, texture::Texture>,
+    texture_handler: ResourceManager<texture::Texture, texture::TextureHandler<'engine>>,
     window: Window
 }
 
 impl RenderEngine<'_> {
-    pub fn new<'engine>(device: &DeviceState, texture_handler: &'engine mut texture::TextureHandler) -> RenderEngine<'engine> {
+    pub fn new<'engine>(device: &'engine DeviceState) -> RenderEngine<'engine> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             dx12_shader_compiler: Default::default()
@@ -74,9 +74,12 @@ impl RenderEngine<'_> {
         };
         window.surface.configure(&device.device, &config);
 
-        let surface_uuid = texture_handler.set_surface(&window.surface);
-        let mut textures = ResourceManager::new::<1024>(texture_handler);
-        textures.create(&ResourceMetaData {
+        let mut texture_handler = ResourceManager::new::<1024>(
+            texture::TextureHandler::new(&device)
+        );
+
+        let surface_uuid = texture_handler.handler.set_surface(&window.surface);
+        texture_handler.handler.create(&ResourceMetaData {
             uuid: surface_uuid,
             lifetime: ResourceLifetime::Forever,
             name: Some(std::borrow::Cow::Owned("Window Surface".to_string())),
@@ -85,7 +88,7 @@ impl RenderEngine<'_> {
 
         RenderEngine {
             instance,
-            textures,
+            texture_handler,
             window
         }
     }
